@@ -1,0 +1,1798 @@
+<!DOCTYPE html>
+<html lang="es">
+  <head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>WSS Framework — Evaluación de Severidad Wi-Fi</title>
+  <style>
+  /* ============================================================
+    WSS FRAMEWORK — Landing comercial + Calculadora interactiva
+    Token system:
+    Color   — fondo casi-negro #0B0E11, acento bajo #6FE3A6,
+              medio #F2C45C, alto #FF9156, crítico #FF5640
+    Type    — Display: 'Space Grotesk' (headlines, condensada técnica)
+              Body: 'Inter' (texto)
+              Mono: 'JetBrains Mono' (vectores WSS, scores, SSID)
+    Layout  — Hero = la calculadora misma, dial de RF como signature
+    ============================================================ */
+
+  @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap');
+
+  :root {
+    --bg: #0B0E11;
+    --bg-panel: #11151A;
+    --bg-panel-raised: #161B21;
+    --line: #232B33;
+    --line-soft: #1A2026;
+    --text: #F2F4F1;
+    --text-dim: #8B92A0;
+    --text-faint: #545C68;
+
+    --severity-low: #6FE3A6;
+    --severity-medium: #F2C45C;
+    --severity-high: #FF9156;
+    --severity-critical: #FF5640;
+
+    --font-display: 'Space Grotesk', sans-serif;
+    --font-body: 'Inter', sans-serif;
+    --font-mono: 'JetBrains Mono', monospace;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  html { scroll-behavior: smooth; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font-body);
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+    overflow-x: hidden;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { animation-duration: 0.001ms !important; animation-iteration-count: 1 !important; transition-duration: 0.001ms !important; }
+  }
+
+  a { color: inherit; text-decoration: none; }
+
+  :focus-visible {
+    outline: 2px solid var(--severity-low);
+    outline-offset: 3px;
+    border-radius: 4px;
+  }
+
+  .wrap {
+    max-width: 1180px;
+    margin: 0 auto;
+    padding: 0 32px;
+  }
+
+  @media (max-width: 640px) {
+    .wrap { padding: 0 20px; }
+  }
+
+  /* ---------- Background texture: faint RF rings ---------- */
+  .rf-field {
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    opacity: 0.5;
+    background-image:
+      radial-gradient(circle at 85% 12%, rgba(111,227,166,0.06), transparent 38%),
+      radial-gradient(circle at 8% 75%, rgba(255,145,86,0.05), transparent 42%);
+  }
+
+  /* ---------- Nav ---------- */
+  .nav {
+    position: sticky;
+    top: 0;
+    z-index: 50;
+    background: rgba(11,14,17,0.82);
+    backdrop-filter: blur(10px);
+    border-bottom: 1px solid var(--line-soft);
+  }
+  .nav-inner {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 18px 0;
+  }
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-family: var(--font-display);
+    font-weight: 600;
+    font-size: 17px;
+    letter-spacing: 0.01em;
+  }
+  .brand-mark {
+    width: 28px; height: 28px;
+    border-radius: 7px;
+    background: linear-gradient(135deg, var(--severity-low), #3FB37F);
+    display: flex; align-items: center; justify-content: center;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    font-weight: 600;
+    color: #06140C;
+    flex-shrink: 0;
+  }
+  .nav-links {
+    display: flex;
+    gap: 34px;
+    font-size: 14px;
+    color: var(--text-dim);
+  }
+  .nav-links a:hover { color: var(--text); }
+  .nav-cta {
+    font-size: 14px;
+    font-weight: 600;
+    padding: 9px 18px;
+    border-radius: 8px;
+    background: var(--text);
+    color: var(--bg);
+    transition: transform 0.15s ease, opacity 0.15s ease;
+  }
+  .nav-cta:hover { transform: translateY(-1px); opacity: 0.92; }
+
+  @media (max-width: 780px) {
+    .nav-links { display: none; }
+  }
+
+  /* ---------- Hero ---------- */
+  .hero {
+    position: relative;
+    z-index: 1;
+    padding: 76px 0 64px;
+  }
+  .eyebrow {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--severity-low);
+    background: rgba(111,227,166,0.08);
+    border: 1px solid rgba(111,227,166,0.22);
+    padding: 6px 12px;
+    border-radius: 100px;
+    margin-bottom: 28px;
+  }
+  .eyebrow-dot {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: var(--severity-low);
+    box-shadow: 0 0 0 0 rgba(111,227,166,0.6);
+    animation: pulse-dot 2.2s ease-out infinite;
+  }
+  @keyframes pulse-dot {
+    0%   { box-shadow: 0 0 0 0 rgba(111,227,166,0.5); }
+    70%  { box-shadow: 0 0 0 7px rgba(111,227,166,0); }
+    100% { box-shadow: 0 0 0 0 rgba(111,227,166,0); }
+  }
+
+  .hero-grid {
+    display: grid;
+    grid-template-columns: 1.05fr 0.95fr;
+    gap: 56px;
+    align-items: center;
+  }
+  @media (max-width: 920px) {
+    .hero-grid { grid-template-columns: 1fr; gap: 44px; }
+  }
+
+  .hero h1 {
+    font-family: var(--font-display);
+    font-weight: 600;
+    font-size: clamp(34px, 4.6vw, 54px);
+    line-height: 1.08;
+    letter-spacing: -0.01em;
+    margin-bottom: 22px;
+  }
+  .hero h1 .accent { color: var(--severity-low); }
+
+  .hero p.lede {
+    font-size: 17px;
+    color: var(--text-dim);
+    max-width: 480px;
+    margin-bottom: 32px;
+  }
+
+  .hero-actions { display: flex; gap: 14px; flex-wrap: wrap; margin-bottom: 40px; }
+
+  .btn {
+    font-family: var(--font-body);
+    font-weight: 600;
+    font-size: 14.5px;
+    padding: 13px 22px;
+    border-radius: 9px;
+    cursor: pointer;
+    border: none;
+    transition: transform 0.15s ease, opacity 0.15s ease, box-shadow 0.15s ease;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .btn-primary {
+    background: var(--severity-low);
+    color: #06140C;
+  }
+  .btn-primary:hover { transform: translateY(-1px); box-shadow: 0 8px 24px rgba(111,227,166,0.22); }
+  .btn-ghost {
+    background: transparent;
+    border: 1px solid var(--line);
+    color: var(--text);
+  }
+  .btn-ghost:hover { border-color: var(--text-dim); }
+
+  .hero-stats {
+    display: flex;
+    gap: 36px;
+    flex-wrap: wrap;
+  }
+  .stat .num {
+    font-family: var(--font-display);
+    font-size: 26px;
+    font-weight: 600;
+  }
+  .stat .label {
+    font-size: 12.5px;
+    color: var(--text-faint);
+    margin-top: 2px;
+  }
+
+  /* ---------- RF dial preview (decorative, mirrors the calculator) ---------- */
+  .dial-preview {
+    background: var(--bg-panel);
+    border: 1px solid var(--line);
+    border-radius: 20px;
+    padding: 30px;
+    position: relative;
+    overflow: hidden;
+  }
+  .dial-preview::before {
+    content: '';
+    position: absolute;
+    top: -40%; right: -30%;
+    width: 280px; height: 280px;
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(111,227,166,0.10), transparent 70%);
+    pointer-events: none;
+  }
+  .dial-preview-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    margin-bottom: 22px;
+  }
+  .dial-preview-head .ssid {
+    font-family: var(--font-mono);
+    font-size: 13px;
+    color: var(--text-dim);
+  }
+  .dial-preview-head .ssid b { color: var(--text); }
+  .dial-preview-head .tag {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    padding: 3px 9px;
+    border-radius: 5px;
+    background: rgba(111,227,166,0.12);
+    color: var(--severity-low);
+  }
+
+  .vector-line {
+    font-family: var(--font-mono);
+    font-size: 12.5px;
+    color: var(--text-faint);
+    margin-top: 18px;
+    word-break: break-all;
+    line-height: 1.7;
+  }
+  .vector-line .hl { color: var(--text-dim); }
+
+  /* ---------- Sections ---------- */
+  section { position: relative; z-index: 1; padding: 88px 0; }
+  .section-label {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--text-faint);
+    margin-bottom: 14px;
+  }
+  .section-title {
+    font-family: var(--font-display);
+    font-weight: 600;
+    font-size: clamp(26px, 3.2vw, 36px);
+    letter-spacing: -0.01em;
+    max-width: 640px;
+    margin-bottom: 16px;
+  }
+  .section-sub {
+    color: var(--text-dim);
+    font-size: 16px;
+    max-width: 560px;
+    margin-bottom: 52px;
+  }
+
+  .divider {
+    height: 1px;
+    background: linear-gradient(90deg, transparent, var(--line), transparent);
+  }
+
+  /* ---------- How it works ---------- */
+  .flow {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 0;
+    border: 1px solid var(--line);
+    border-radius: 16px;
+    overflow: hidden;
+  }
+  @media (max-width: 900px) {
+    .flow { grid-template-columns: 1fr; }
+  }
+  .flow-step {
+    padding: 28px 22px;
+    border-right: 1px solid var(--line);
+    position: relative;
+  }
+  .flow-step:last-child { border-right: none; }
+  @media (max-width: 900px) {
+    .flow-step { border-right: none; border-bottom: 1px solid var(--line); }
+    .flow-step:last-child { border-bottom: none; }
+  }
+  .flow-step .fkey {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--severity-low);
+    margin-bottom: 14px;
+  }
+  .flow-step h3 {
+    font-family: var(--font-display);
+    font-size: 16px;
+    font-weight: 600;
+    margin-bottom: 8px;
+  }
+  .flow-step p {
+    font-size: 13.5px;
+    color: var(--text-dim);
+    line-height: 1.55;
+  }
+
+  /* ---------- Calculator ---------- */
+  .calc-wrap {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0;
+    border: 1px solid var(--line);
+    border-radius: 20px;
+    overflow: hidden;
+    background: var(--bg-panel);
+  }
+  @media (max-width: 880px) {
+    .calc-wrap { grid-template-columns: 1fr; }
+  }
+
+  .calc-inputs {
+    padding: 40px;
+    border-right: 1px solid var(--line);
+  }
+  @media (max-width: 880px) {
+    .calc-inputs { border-right: none; border-bottom: 1px solid var(--line); }
+  }
+
+  .field { margin-bottom: 26px; }
+  .field:last-child { margin-bottom: 0; }
+  .field-label {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    margin-bottom: 10px;
+  }
+  .field-label .name {
+    font-size: 13.5px;
+    font-weight: 600;
+  }
+  .field-label .tag {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--text-faint);
+  }
+
+  .seg {
+    display: grid;
+    grid-auto-flow: column;
+    grid-auto-columns: 1fr;
+    gap: 6px;
+  }
+  .seg button {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    padding: 10px 8px;
+    border-radius: 8px;
+    border: 1px solid var(--line);
+    background: var(--bg-panel-raised);
+    color: var(--text-dim);
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+  .seg button:hover { border-color: var(--text-faint); color: var(--text); }
+  .seg button.active {
+    background: var(--text);
+    color: var(--bg);
+    border-color: var(--text);
+  }
+
+  .slider-row { display: flex; align-items: center; gap: 14px; }
+  .slider-row input[type=range] {
+    flex: 1;
+    accent-color: var(--severity-low);
+    height: 4px;
+  }
+  .slider-val {
+    font-family: var(--font-mono);
+    font-size: 13px;
+    min-width: 56px;
+    text-align: right;
+    color: var(--text-dim);
+  }
+
+  .toggle-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: var(--bg-panel-raised);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 12px 16px;
+  }
+  .toggle-row .toggle-text { font-size: 13.5px; }
+  .toggle-row .toggle-text .sub { font-size: 11.5px; color: var(--text-faint); display: block; margin-top: 2px; }
+  .switch {
+    width: 40px; height: 22px;
+    border-radius: 100px;
+    background: var(--line);
+    position: relative;
+    cursor: pointer;
+    transition: background 0.2s ease;
+    flex-shrink: 0;
+  }
+  .switch.on { background: var(--severity-critical); }
+  .switch::after {
+    content: '';
+    position: absolute;
+    top: 2px; left: 2px;
+    width: 18px; height: 18px;
+    border-radius: 50%;
+    background: var(--text);
+    transition: transform 0.2s ease;
+  }
+  .switch.on::after { transform: translateX(18px); }
+
+  /* ---------- Calc output ---------- */
+  .calc-output {
+    padding: 40px;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .dial-stage {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 8px 0 28px;
+  }
+
+  .dial-svg-wrap { position: relative; width: 220px; height: 220px; }
+  .dial-score {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+  }
+  .dial-score .num {
+    font-family: var(--font-display);
+    font-size: 52px;
+    font-weight: 700;
+    line-height: 1;
+    transition: color 0.25s ease;
+  }
+  .dial-score .scale { font-size: 12px; color: var(--text-faint); margin-top: 2px; }
+
+  .severity-badge {
+    margin-top: 18px;
+    font-family: var(--font-mono);
+    font-size: 13px;
+    letter-spacing: 0.04em;
+    padding: 7px 16px;
+    border-radius: 100px;
+    text-transform: uppercase;
+    transition: all 0.25s ease;
+  }
+
+  .vector-box {
+    background: var(--bg);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 16px 18px;
+    margin-top: 8px;
+  }
+  .vector-box .vb-label {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--text-faint);
+    margin-bottom: 8px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+  .vector-box .vb-value {
+    font-family: var(--font-mono);
+    font-size: 13.5px;
+    color: var(--text);
+    word-break: break-all;
+    line-height: 1.6;
+  }
+
+  .breakdown {
+    margin-top: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .bd-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    font-size: 12.5px;
+  }
+  .bd-row .bd-label { width: 140px; color: var(--text-dim); font-family: var(--font-mono); font-size: 11.5px; flex-shrink: 0; }
+  .bd-row .bd-bar {
+    flex: 1;
+    height: 6px;
+    background: var(--line-soft);
+    border-radius: 100px;
+    overflow: hidden;
+  }
+  .bd-row .bd-fill {
+    height: 100%;
+    border-radius: 100px;
+    transition: width 0.3s ease, background 0.3s ease;
+  }
+  .bd-row .bd-pct { font-family: var(--font-mono); width: 32px; text-align: right; color: var(--text-faint); }
+
+  .calc-note {
+    margin-top: auto;
+    padding-top: 24px;
+    font-size: 12px;
+    color: var(--text-faint);
+    line-height: 1.6;
+    border-top: 1px solid var(--line-soft);
+    margin-top: 24px;
+  }
+
+  /* ---------- Scenario presets ---------- */
+  .preset-row {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 32px;
+    flex-wrap: wrap;
+  }
+  .preset-chip {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    padding: 8px 14px;
+    border-radius: 100px;
+    border: 1px solid var(--line);
+    background: var(--bg-panel);
+    color: var(--text-dim);
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+  .preset-chip:hover { border-color: var(--text-dim); color: var(--text); }
+
+  /* ---------- Benefits grid ---------- */
+  .benefits {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1px;
+    background: var(--line);
+    border-radius: 16px;
+    overflow: hidden;
+  }
+  @media (max-width: 880px) {
+    .benefits { grid-template-columns: 1fr; }
+  }
+  .benefit-card {
+    background: var(--bg-panel);
+    padding: 32px 28px;
+  }
+  .benefit-card .b-icon {
+    width: 38px; height: 38px;
+    border-radius: 9px;
+    background: var(--bg-panel-raised);
+    border: 1px solid var(--line);
+    display: flex; align-items: center; justify-content: center;
+    margin-bottom: 18px;
+    font-family: var(--font-mono);
+    font-size: 14px;
+    color: var(--severity-low);
+  }
+  .benefit-card h3 {
+    font-family: var(--font-display);
+    font-size: 16.5px;
+    font-weight: 600;
+    margin-bottom: 10px;
+  }
+  .benefit-card p {
+    font-size: 13.5px;
+    color: var(--text-dim);
+    line-height: 1.6;
+  }
+
+  /* ---------- Classification table ---------- */
+  .class-table {
+    border: 1px solid var(--line);
+    border-radius: 16px;
+    overflow: hidden;
+  }
+  .class-row {
+    display: grid;
+    grid-template-columns: 140px 1fr 100px;
+    align-items: center;
+    padding: 18px 24px;
+    border-bottom: 1px solid var(--line);
+    gap: 20px;
+  }
+  .class-row:last-child { border-bottom: none; }
+  .class-row .c-name {
+    font-family: var(--font-mono);
+    font-size: 13px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .class-row .c-dot { width: 8px; height: 8px; border-radius: 50%; }
+  .class-row .c-range {
+    font-family: var(--font-mono);
+    font-size: 12.5px;
+    color: var(--text-faint);
+  }
+  .class-row .c-desc { font-size: 13px; color: var(--text-dim); }
+  @media (max-width: 640px) {
+    .class-row { grid-template-columns: 1fr; gap: 6px; }
+  }
+
+  /* ---------- CTA section ---------- */
+  .cta-band {
+    background: var(--bg-panel);
+    border: 1px solid var(--line);
+    border-radius: 24px;
+    padding: 64px 48px;
+    text-align: center;
+  }
+  @media (max-width: 640px) {
+    .cta-band { padding: 48px 28px; }
+  }
+  .cta-band h2 {
+    font-family: var(--font-display);
+    font-size: clamp(24px, 3.4vw, 32px);
+    font-weight: 600;
+    margin-bottom: 16px;
+  }
+  .cta-band p {
+    color: var(--text-dim);
+    max-width: 480px;
+    margin: 0 auto 32px;
+  }
+
+  /* ---------- Footer ---------- */
+  footer {
+    border-top: 1px solid var(--line-soft);
+    padding: 40px 0 60px;
+  }
+  .footer-inner {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 16px;
+  }
+  .footer-meta {
+    font-size: 12.5px;
+    color: var(--text-faint);
+  }
+  .footer-links { display: flex; gap: 24px; font-size: 13px; color: var(--text-dim); }
+  .footer-links a:hover { color: var(--text); }
+
+  /* ---------- Scroll reveal ---------- */
+  .reveal {
+    opacity: 0;
+    transform: translateY(16px);
+    transition: opacity 0.6s ease, transform 0.6s ease;
+  }
+  .reveal.in { opacity: 1; transform: translateY(0); }
+
+  /* ============================================================
+    APP TABS — vista demo (landing) vs vista real (Mis Redes)
+    ============================================================ */
+  .app-tabs {
+    position: sticky;
+    top: 65px;
+    z-index: 45;
+    background: rgba(11,14,17,0.92);
+    backdrop-filter: blur(10px);
+    border-bottom: 1px solid var(--line-soft);
+  }
+  .app-tabs-inner {
+    display: flex;
+    gap: 4px;
+    padding: 10px 0;
+  }
+  .app-tab {
+    font-family: var(--font-body);
+    font-size: 13.5px;
+    font-weight: 600;
+    padding: 9px 16px;
+    border-radius: 8px;
+    color: var(--text-dim);
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    display: flex;
+    align-items: center;
+    gap: 7px;
+  }
+  .app-tab:hover { color: var(--text); background: var(--bg-panel); }
+  .app-tab.active {
+    color: var(--bg);
+    background: var(--severity-low);
+  }
+  .app-tab .dot-live {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: var(--severity-low);
+    flex-shrink: 0;
+  }
+  .app-tab.active .dot-live { background: var(--bg); }
+
+  .view { display: none; }
+  .view.active { display: block; }
+
+  /* ---------- Mis Redes — vista de escaneo real ---------- */
+  .scan-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    flex-wrap: wrap;
+    margin-bottom: 28px;
+  }
+  .scan-status {
+    font-family: var(--font-mono);
+    font-size: 12.5px;
+    color: var(--text-faint);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .scan-status .pf-pill {
+    padding: 3px 9px;
+    border-radius: 100px;
+    background: var(--bg-panel-raised);
+    border: 1px solid var(--line);
+    font-size: 11px;
+  }
+  .scan-status .pf-pill.ready { color: var(--severity-low); border-color: rgba(111,227,166,0.3); }
+  .scan-status .pf-pill.unavailable { color: var(--severity-high); border-color: rgba(255,145,86,0.3); }
+
+  .btn-scan {
+    font-family: var(--font-body);
+    font-weight: 600;
+    font-size: 14.5px;
+    padding: 13px 24px;
+    border-radius: 9px;
+    cursor: pointer;
+    border: none;
+    background: var(--severity-low);
+    color: #06140C;
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    transition: transform 0.15s ease, opacity 0.15s ease;
+  }
+  .btn-scan:hover { transform: translateY(-1px); }
+  .btn-scan:disabled { opacity: 0.55; cursor: not-allowed; transform: none; }
+  .btn-scan .spinner {
+    width: 14px; height: 14px;
+    border-radius: 50%;
+    border: 2px solid rgba(6,20,12,0.3);
+    border-top-color: #06140C;
+    animation: spin 0.7s linear infinite;
+    display: none;
+  }
+  .btn-scan.loading .spinner { display: inline-block; }
+  .btn-scan.loading .scan-label { opacity: 0.7; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .btn-secondary-sm {
+    font-family: var(--font-body);
+    font-weight: 600;
+    font-size: 13px;
+    padding: 10px 16px;
+    border-radius: 8px;
+    cursor: pointer;
+    border: 1px solid var(--line);
+    background: transparent;
+    color: var(--text-dim);
+    transition: all 0.15s ease;
+  }
+  .btn-secondary-sm:hover { border-color: var(--text-dim); color: var(--text); }
+
+  .scan-empty {
+    border: 1px dashed var(--line);
+    border-radius: 16px;
+    padding: 64px 32px;
+    text-align: center;
+    color: var(--text-faint);
+  }
+  .scan-empty .se-icon { font-size: 28px; margin-bottom: 14px; opacity: 0.6; }
+  .scan-empty .se-title { font-family: var(--font-display); font-size: 16px; color: var(--text-dim); margin-bottom: 8px; }
+  .scan-empty .se-sub { font-size: 13px; max-width: 360px; margin: 0 auto; line-height: 1.6; }
+
+  .scan-error {
+    border: 1px solid rgba(255,86,64,0.3);
+    background: rgba(255,86,64,0.06);
+    border-radius: 14px;
+    padding: 22px 24px;
+    color: var(--severity-critical);
+    font-size: 13.5px;
+    line-height: 1.6;
+    margin-bottom: 24px;
+  }
+  .scan-error b { color: var(--text); }
+
+  .network-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 14px;
+  }
+
+  .net-card {
+    background: var(--bg-panel);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding: 20px;
+    cursor: pointer;
+    transition: border-color 0.15s ease, transform 0.15s ease;
+    position: relative;
+  }
+  .net-card:hover { border-color: var(--text-faint); transform: translateY(-2px); }
+  .net-card.selected { border-color: var(--severity-low); }
+
+  .net-card-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 14px;
+    gap: 10px;
+  }
+  .net-card-ssid {
+    font-family: var(--font-mono);
+    font-size: 14px;
+    font-weight: 600;
+    word-break: break-word;
+  }
+  .net-card-score {
+    font-family: var(--font-display);
+    font-size: 22px;
+    font-weight: 700;
+    flex-shrink: 0;
+  }
+  .net-card-meta {
+    font-size: 12px;
+    color: var(--text-faint);
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-bottom: 12px;
+  }
+  .net-card-badge {
+    display: inline-block;
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    padding: 4px 10px;
+    border-radius: 100px;
+  }
+  .net-card-anomaly {
+    margin-top: 10px;
+    font-size: 11.5px;
+    color: var(--severity-critical);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-family: var(--font-mono);
+  }
+
+  .detail-panel {
+    margin-top: 28px;
+    background: var(--bg-panel);
+    border: 1px solid var(--line);
+    border-radius: 18px;
+    padding: 32px;
+  }
+  .detail-panel-empty {
+    color: var(--text-faint);
+    font-size: 13.5px;
+    text-align: center;
+    padding: 20px 0;
+  }
+
+  </style>
+  </head>
+  <body>
+
+  <div class="rf-field"></div>
+
+  <nav class="nav">
+    <div class="wrap nav-inner">
+      <div class="brand">
+        <div class="brand-mark">WS</div>
+        WSS Framework
+      </div>
+      <div class="nav-links">
+        <a href="#como-funciona">Cómo funciona</a>
+        <a href="#calculadora">Calculadora</a>
+        <a href="#clasificacion">Clasificación</a>
+        <a href="#beneficios">Beneficios</a>
+      </div>
+      <a href="#calculadora" class="nav-cta">Probar ahora</a>
+    </div>
+  </nav>
+
+  <div class="app-tabs">
+    <div class="wrap app-tabs-inner">
+      <button class="app-tab active" data-view="view-demo">Calculadora Demo</button>
+      <button class="app-tab" data-view="view-real"><span class="dot-live"></span> Mis Redes</button>
+    </div>
+  </div>
+
+  <div id="view-demo" class="view active">
+
+  <header class="hero">
+    <div class="wrap hero-grid">
+      <div>
+        <div class="eyebrow"><span class="eyebrow-dot"></span> Evaluación pasiva · sin intrusión</div>
+        <h1>Sabé qué tan expuesta está tu red Wi-Fi<span class="accent">.</span></h1>
+        <p class="lede">
+          WSS Framework traduce la configuración de tu red inalámbrica —autenticación, cifrado, señal—
+          en un puntaje de severidad técnica de 0 a 10, sin ejecutar ninguna prueba activa sobre tu infraestructura.
+        </p>
+        <div class="hero-actions">
+          <a href="#calculadora" class="btn btn-primary">Probar la calculadora →</a>
+          <a href="#como-funciona" class="btn btn-ghost">Cómo funciona</a>
+        </div>
+        <div class="hero-stats">
+          <div class="stat">
+            <div class="num">0–10</div>
+            <div class="label">Escala de severidad</div>
+          </div>
+          <div class="stat">
+            <div class="num">5</div>
+            <div class="label">Dimensiones evaluadas</div>
+          </div>
+          <div class="stat">
+            <div class="num">0</div>
+            <div class="label">Pruebas activas requeridas</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="dial-preview">
+        <div class="dial-preview-head">
+          <div class="ssid">Evaluando: <b>OFICINA-WIFI</b></div>
+          <div class="tag">WPA2 · CCMP</div>
+        </div>
+        <div id="hero-dial-mount"></div>
+        <div class="vector-line">
+          <span class="hl">WSS:1.0</span>/AU:0.3/EN:0.1/EX:0.8/AN:0.0/BM:ALIGNED
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <section id="como-funciona">
+    <div class="wrap">
+      <div class="section-label">Metodología</div>
+      <h2 class="section-title">Cinco señales observables. Un puntaje reproducible.</h2>
+      <p class="section-sub">
+        El modelo no requiere conectarse de forma intrusiva ni interceptar tráfico. Lee únicamente lo que cualquier
+        punto de acceso ya transmite públicamente, y lo convierte en un indicador técnico estructurado.
+      </p>
+
+      <div class="flow reveal">
+        <div class="flow-step">
+          <div class="fkey">01 · AU</div>
+          <h3>Autenticación</h3>
+          <p>Identifica el mecanismo de acceso: WPA3-SAE, WPA2-PSK, WPA o red abierta.</p>
+        </div>
+        <div class="flow-step">
+          <div class="fkey">02 · EN</div>
+          <h3>Cifrado</h3>
+          <p>Evalúa el esquema de protección de datos: CCMP, TKIP, WEP o ausencia de cifrado.</p>
+        </div>
+        <div class="flow-step">
+          <div class="fkey">03 · EX</div>
+          <h3>Exposición</h3>
+          <p>Estima la accesibilidad técnica real a partir de la intensidad de señal observada (RSSI).</p>
+        </div>
+        <div class="flow-step">
+          <div class="fkey">04 · AN</div>
+          <h3>Anomalía</h3>
+          <p>Detecta condiciones de infraestructura como duplicidad de SSID con BSSID distinto.</p>
+        </div>
+        <div class="flow-step">
+          <div class="fkey">05 · BM</div>
+          <h3>Benchmark</h3>
+          <p>Compara la configuración contra una línea base segura definida para tu organización.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <div class="wrap"><div class="divider"></div></div>
+
+  <section id="calculadora">
+    <div class="wrap">
+      <div class="section-label">Demostración interactiva</div>
+      <h2 class="section-title">Probá el modelo con tu propia configuración</h2>
+      <p class="section-sub">
+        Ajustá los parámetros como si estuvieras describiendo tu red, o elegí un escenario de referencia.
+        El puntaje y el vector WSS se recalculan al instante.
+      </p>
+
+      <div class="preset-row reveal">
+        <button class="preset-chip" data-preset="e1">WPA3 + CCMP (referencia segura)</button>
+        <button class="preset-chip" data-preset="e2">WPA2 + AES (uso común)</button>
+        <button class="preset-chip" data-preset="e3">WPA2 + TKIP (cifrado obsoleto)</button>
+        <button class="preset-chip" data-preset="e5">Red abierta (sin protección)</button>
+        <button class="preset-chip" data-preset="ean">SSID duplicado (anomalía)</button>
+      </div>
+
+      <div class="calc-wrap reveal">
+        <div class="calc-inputs">
+
+          <div class="field">
+            <div class="field-label">
+              <span class="name">Autenticación</span>
+              <span class="tag">AU</span>
+            </div>
+            <div class="seg" id="seg-auth">
+              <button data-val="0.1" data-label="SAE">WPA3</button>
+              <button data-val="0.3" data-label="WPA2-PSK">WPA2</button>
+              <button data-val="0.7" data-label="WPA-PSK">WPA</button>
+              <button data-val="1.0" data-label="OPEN">Abierta</button>
+            </div>
+          </div>
+
+          <div class="field">
+            <div class="field-label">
+              <span class="name">Cifrado</span>
+              <span class="tag">EN</span>
+            </div>
+            <div class="seg" id="seg-cipher">
+              <button data-val="0.1" data-label="CCMP">CCMP</button>
+              <button data-val="0.8" data-label="TKIP">TKIP</button>
+              <button data-val="0.9" data-label="WEP">WEP</button>
+              <button data-val="1.0" data-label="NONE">Ninguno</button>
+            </div>
+          </div>
+
+          <div class="field">
+            <div class="field-label">
+              <span class="name">Intensidad de señal (RSSI)</span>
+              <span class="tag" id="rssi-tag">EX · -45 dBm</span>
+            </div>
+            <div class="slider-row">
+              <input type="range" id="rssi-slider" min="-90" max="-30" value="-45" step="1">
+              <span class="slider-val" id="rssi-val">-45 dBm</span>
+            </div>
+          </div>
+
+          <div class="field">
+            <div class="field-label">
+              <span class="name">Condición anómala</span>
+              <span class="tag">AN</span>
+            </div>
+            <div class="toggle-row">
+              <div class="toggle-text">
+                SSID duplicado detectado
+                <span class="sub">Mismo SSID, BSSID distinto al registrado</span>
+              </div>
+              <div class="switch" id="anomaly-switch"></div>
+            </div>
+          </div>
+
+        </div>
+
+        <div class="calc-output">
+          <div class="dial-stage">
+            <div class="dial-svg-wrap">
+              <svg viewBox="0 0 220 220" width="220" height="220" id="dial-svg">
+                <circle cx="110" cy="110" r="92" fill="none" stroke="#1A2026" stroke-width="14"/>
+                <circle id="dial-arc" cx="110" cy="110" r="92" fill="none" stroke="#6FE3A6" stroke-width="14"
+                  stroke-linecap="round" stroke-dasharray="578" stroke-dashoffset="578"
+                  transform="rotate(-90 110 110)" style="transition: stroke-dashoffset 0.4s ease, stroke 0.4s ease;"/>
+              </svg>
+              <div class="dial-score">
+                <div class="num" id="score-num" style="color: var(--severity-low);">0.0</div>
+                <div class="scale">/ 10</div>
+              </div>
+            </div>
+            <div class="severity-badge" id="severity-badge" style="background: rgba(111,227,166,0.12); color: var(--severity-low);">
+              BAJO
+            </div>
+          </div>
+
+          <div class="vector-box">
+            <div class="vb-label">Vector WSS</div>
+            <div class="vb-value" id="vector-output">WSS:1.0/AU:0.1/EN:0.1/EX:0.78/AN:0.0/BM:ALIGNED</div>
+          </div>
+
+          <div class="breakdown">
+            <div class="bd-row">
+              <span class="bd-label">AU · 30%</span>
+              <div class="bd-bar"><div class="bd-fill" id="bar-au" style="width: 10%; background: var(--severity-low);"></div></div>
+              <span class="bd-pct" id="pct-au">0.1</span>
+            </div>
+            <div class="bd-row">
+              <span class="bd-label">EN · 25%</span>
+              <div class="bd-bar"><div class="bd-fill" id="bar-en" style="width: 10%; background: var(--severity-low);"></div></div>
+              <span class="bd-pct" id="pct-en">0.1</span>
+            </div>
+            <div class="bd-row">
+              <span class="bd-label">EX · 15%</span>
+              <div class="bd-bar"><div class="bd-fill" id="bar-ex" style="width: 78%; background: var(--severity-medium);"></div></div>
+              <span class="bd-pct" id="pct-ex">0.78</span>
+            </div>
+            <div class="bd-row">
+              <span class="bd-label">AN · 20%</span>
+              <div class="bd-bar"><div class="bd-fill" id="bar-an" style="width: 0%; background: var(--severity-low);"></div></div>
+              <span class="bd-pct" id="pct-an">0.0</span>
+            </div>
+            <div class="bd-row">
+              <span class="bd-label">BM · 10%</span>
+              <div class="bd-bar"><div class="bd-fill" id="bar-bm" style="width: 0%; background: var(--severity-low);"></div></div>
+              <span class="bd-pct" id="pct-bm">0.0</span>
+            </div>
+          </div>
+
+          <div class="calc-note">
+            Modelo extendido WSS: R = (0.30·AU + 0.25·EN + 0.15·EX + 0.20·AN + 0.10·BM) × 10.
+            Esta demostración usa datos de ejemplo; no se conecta a ninguna red real.
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <div class="wrap"><div class="divider"></div></div>
+
+  <section id="clasificacion">
+    <div class="wrap">
+      <div class="section-label">Escala de severidad</div>
+      <h2 class="section-title">Cuatro niveles, un mismo criterio en toda tu organización</h2>
+      <p class="section-sub">
+        Cada red evaluada cae en una de cuatro categorías, lo que permite priorizar qué configuraciones revisar primero
+        sin tener que interpretar números sueltos.
+      </p>
+
+      <div class="class-table reveal">
+        <div class="class-row">
+          <div class="c-name"><span class="c-dot" style="background: var(--severity-low);"></span>Bajo</div>
+          <div class="c-desc">Configuración alineada con buenas prácticas actuales (WPA3 o WPA2 con cifrado fuerte).</div>
+          <div class="c-range">0.0 – 2.5</div>
+        </div>
+        <div class="class-row">
+          <div class="c-name"><span class="c-dot" style="background: var(--severity-medium);"></span>Medio</div>
+          <div class="c-desc">Protección funcional, pero con margen de mejora en autenticación o exposición de señal.</div>
+          <div class="c-range">2.5 – 5.0</div>
+        </div>
+        <div class="class-row">
+          <div class="c-name"><span class="c-dot" style="background: var(--severity-high);"></span>Alto</div>
+          <div class="c-desc">Cifrado obsoleto o configuración parcialmente desalineada de la línea base segura.</div>
+          <div class="c-range">5.0 – 7.5</div>
+        </div>
+        <div class="class-row">
+          <div class="c-name"><span class="c-dot" style="background: var(--severity-critical);"></span>Crítico</div>
+          <div class="c-desc">Red abierta, cifrado roto, o condición anómala de infraestructura confirmada.</div>
+          <div class="c-range">7.5 – 10.0</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="beneficios">
+    <div class="wrap">
+      <div class="section-label">Para tu organización</div>
+      <h2 class="section-title">Diseñado para empresas que ya usan Windows</h2>
+      <p class="section-sub">
+        No necesitás personal especializado en seguridad ofensiva ni un sistema operativo distinto al que ya usás todos los días.
+      </p>
+
+      <div class="benefits reveal">
+        <div class="benefit-card">
+          <div class="b-icon">①</div>
+          <h3>Sin instalación compleja</h3>
+          <p>Corre de forma local en Windows, leyendo únicamente los parámetros que tu propio sistema ya expone.</p>
+        </div>
+        <div class="benefit-card">
+          <div class="b-icon">②</div>
+          <h3>No intrusivo por diseño</h3>
+          <p>No ejecuta pruebas activas, no captura credenciales y no interfiere con el tráfico de tu red.</p>
+        </div>
+        <div class="benefit-card">
+          <div class="b-icon">③</div>
+          <h3>Reportes listos para compartir</h3>
+          <p>Exportación directa en JSON y PDF, con el vector WSS completo para trazabilidad técnica.</p>
+        </div>
+        <div class="benefit-card">
+          <div class="b-icon">④</div>
+          <h3>Criterio consistente</h3>
+          <p>El mismo modelo de puntuación se aplica a todas las redes evaluadas, sin juicios subjetivos.</p>
+        </div>
+        <div class="benefit-card">
+          <div class="b-icon">⑤</div>
+          <h3>Alertas de infraestructura</h3>
+          <p>Identifica condiciones como duplicidad de SSID que merecen revisión técnica inmediata.</p>
+        </div>
+        <div class="benefit-card">
+          <div class="b-icon">⑥</div>
+          <h3>Validado experimentalmente</h3>
+          <p>El modelo fue probado en escenarios controlados que cubren todo el espectro de severidad.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="wrap">
+      <div class="cta-band reveal">
+        <h2>¿Querés evaluar tu red ahora?</h2>
+        <p>Probá la calculadora con tu propia configuración o conversemos sobre cómo implementarlo en tu organización.</p>
+        <div class="hero-actions" style="justify-content: center;">
+          <a href="#calculadora" class="btn btn-primary">Ir a la calculadora →</a>
+          <a href="#" class="btn btn-ghost">Contactar al equipo</a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  </div><!-- /#view-demo -->
+
+  <div id="view-real" class="view">
+    <section style="padding-top: 56px;">
+      <div class="wrap">
+        <div class="section-label">Escaneo real</div>
+        <h2 class="section-title">Redes Wi-Fi detectadas en este equipo</h2>
+        <p class="section-sub">
+          Esta vista ejecuta un escaneo pasivo real de las redes visibles desde este dispositivo
+          Windows y aplica el mismo modelo WSS sobre los parámetros observados.
+        </p>
+
+        <div class="scan-toolbar">
+          <button class="btn-scan" id="btn-scan">
+            <span class="spinner"></span>
+            <span class="scan-label" id="scan-label">Escanear redes</span>
+          </button>
+          <div class="scan-status">
+            <span id="platform-pill" class="pf-pill">Verificando plataforma…</span>
+            <button class="btn-secondary-sm" id="btn-export" style="display:none;">Exportar JSON</button>
+          </div>
+        </div>
+
+        <div id="scan-error-box"></div>
+
+        <div id="scan-empty" class="scan-empty">
+          <div class="se-icon">◌</div>
+          <div class="se-title">Todavía no escaneaste ninguna red</div>
+          <div class="se-sub">Presioná "Escanear redes" para detectar los puntos de acceso visibles
+            desde este equipo y calcular su severidad técnica.</div>
+        </div>
+
+        <div id="network-grid" class="network-grid" style="display:none;"></div>
+
+        <div id="detail-panel" class="detail-panel" style="display:none;"></div>
+      </div>
+    </section>
+  </div><!-- /#view-real -->
+
+  <footer>
+    <div class="wrap footer-inner">
+      <div class="footer-meta">WSS Framework — Universidad del Norte, Facultad de Ingeniería · 2026</div>
+      <div class="footer-links">
+        <a href="#como-funciona">Metodología</a>
+        <a href="#clasificacion">Clasificación</a>
+        <a href="#beneficios">Beneficios</a>
+      </div>
+    </div>
+  </footer>
+
+  <script>
+  (function () {
+    // ---------- Model ----------
+    const WEIGHTS = { au: 0.30, en: 0.25, ex: 0.15, an: 0.20, bm: 0.10 };
+
+    const SEVERITY = [
+      { max: 2.5, key: 'low',      label: 'BAJO',     color: '#6FE3A6' },
+      { max: 5.0, key: 'medium',   label: 'MEDIO',    color: '#F2C45C' },
+      { max: 7.5, key: 'high',     label: 'ALTO',     color: '#FF9156' },
+      { max: 10.01, key: 'critical', label: 'CRÍTICO', color: '#FF5640' },
+    ];
+
+    const PRESETS = {
+      e1:  { au: '0.1', en: '0.1', rssi: -60, anomaly: false, ssidTag: 'WPA3 · CCMP' },
+      e2:  { au: '0.3', en: '0.1', rssi: -45, anomaly: false, ssidTag: 'WPA2 · AES' },
+      e3:  { au: '0.3', en: '0.8', rssi: -45, anomaly: false, ssidTag: 'WPA2 · TKIP' },
+      e5:  { au: '1.0', en: '1.0', rssi: -40, anomaly: false, ssidTag: 'Abierta' },
+      ean: { au: '0.3', en: '0.1', rssi: -45, anomaly: true,  ssidTag: 'WPA2 · CCMP (duplicado)' },
+    };
+
+    function classifyExposure(rssi) {
+      if (rssi >= -50) return 1.0;
+      if (rssi >= -70) return 0.8;
+      return 0.5;
+    }
+
+    function determineBM(au, en, anomaly) {
+      const secureAuth = au === '0.1' || au === '0.3';
+      const secureCipher = en === '0.1';
+      if (secureAuth && secureCipher && !anomaly) return { label: 'ALIGNED', val: 0.0 };
+      if (secureCipher && !anomaly) return { label: 'PARTIAL', val: 0.5 };
+      return { label: 'DEVIANT', val: 1.0 };
+    }
+
+    function severityFor(score) {
+      return SEVERITY.find(s => score <= s.max) || SEVERITY[SEVERITY.length - 1];
+    }
+
+    // ---------- State refs ----------
+    const segAuth = document.getElementById('seg-auth');
+    const segCipher = document.getElementById('seg-cipher');
+    const rssiSlider = document.getElementById('rssi-slider');
+    const rssiVal = document.getElementById('rssi-val');
+    const rssiTag = document.getElementById('rssi-tag');
+    const anomalySwitch = document.getElementById('anomaly-switch');
+
+    const scoreNum = document.getElementById('score-num');
+    const severityBadge = document.getElementById('severity-badge');
+    const dialArc = document.getElementById('dial-arc');
+    const vectorOutput = document.getElementById('vector-output');
+
+    const ARC_LENGTH = 578; // ~ 2 * PI * 92
+
+    let state = { au: '0.3', en: '0.1', rssi: -45, anomaly: false };
+
+    function setActiveSeg(seg, value) {
+      [...seg.children].forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.val === value);
+      });
+    }
+
+    function setBar(id, pctId, value) {
+      const pct = Math.round(value * 100);
+      const bar = document.getElementById(id);
+      const pctEl = document.getElementById(pctId);
+      bar.style.width = pct + '%';
+      pctEl.textContent = value.toFixed(2);
+      let color = '#6FE3A6';
+      if (value > 0.75) color = '#FF5640';
+      else if (value > 0.45) color = '#FF9156';
+      else if (value > 0.15) color = '#F2C45C';
+      bar.style.background = color;
+    }
+
+    function recalc() {
+      const au = parseFloat(state.au);
+      const en = parseFloat(state.en);
+      const ex = classifyExposure(state.rssi);
+      const an = state.anomaly ? 1.0 : 0.0;
+      const bm = determineBM(state.au, state.en, state.anomaly);
+
+      const score = (WEIGHTS.au * au + WEIGHTS.en * en + WEIGHTS.ex * ex +
+                    WEIGHTS.an * an + WEIGHTS.bm * bm.val) * 10;
+
+      const sev = severityFor(score);
+
+      // Dial
+      const offset = ARC_LENGTH - (score / 10) * ARC_LENGTH;
+      dialArc.style.strokeDashoffset = offset;
+      dialArc.style.stroke = sev.color;
+      scoreNum.textContent = score.toFixed(1);
+      scoreNum.style.color = sev.color;
+
+      severityBadge.textContent = sev.label;
+      severityBadge.style.background = sev.color + '20';
+      severityBadge.style.color = sev.color;
+
+      // Vector
+      vectorOutput.textContent =
+        `WSS:1.0/AU:${au}/EN:${en}/EX:${ex.toFixed(2)}/AN:${an.toFixed(1)}/BM:${bm.label}`;
+
+      // Breakdown bars
+      setBar('bar-au', 'pct-au', au);
+      setBar('bar-en', 'pct-en', en);
+      setBar('bar-ex', 'pct-ex', ex);
+      setBar('bar-an', 'pct-an', an);
+      setBar('bar-bm', 'pct-bm', bm.val);
+
+      // RSSI label
+      rssiVal.textContent = state.rssi + ' dBm';
+      const exLabel = ex === 1.0 ? 'ALTA' : ex === 0.8 ? 'MEDIA' : 'BAJA';
+      rssiTag.textContent = 'EX · ' + state.rssi + ' dBm (' + exLabel + ')';
+    }
+
+    // ---------- Wire up controls ----------
+    segAuth.addEventListener('click', (e) => {
+      const btn = e.target.closest('button');
+      if (!btn) return;
+      state.au = btn.dataset.val;
+      setActiveSeg(segAuth, state.au);
+      recalc();
+    });
+
+    segCipher.addEventListener('click', (e) => {
+      const btn = e.target.closest('button');
+      if (!btn) return;
+      state.en = btn.dataset.val;
+      setActiveSeg(segCipher, state.en);
+      recalc();
+    });
+
+    rssiSlider.addEventListener('input', (e) => {
+      state.rssi = parseInt(e.target.value, 10);
+      recalc();
+    });
+
+    anomalySwitch.addEventListener('click', () => {
+      state.anomaly = !state.anomaly;
+      anomalySwitch.classList.toggle('on', state.anomaly);
+      recalc();
+    });
+
+    document.querySelectorAll('.preset-chip').forEach(chip => {
+      chip.addEventListener('click', () => {
+        const preset = PRESETS[chip.dataset.preset];
+        if (!preset) return;
+        state.au = preset.au;
+        state.en = preset.en;
+        state.rssi = preset.rssi;
+        state.anomaly = preset.anomaly;
+
+        setActiveSeg(segAuth, state.au);
+        setActiveSeg(segCipher, state.en);
+        rssiSlider.value = state.rssi;
+        anomalySwitch.classList.toggle('on', state.anomaly);
+
+        recalc();
+
+        document.querySelectorAll('.preset-chip').forEach(c => c.style.borderColor = '');
+        chip.style.borderColor = '#6FE3A6';
+      });
+    });
+
+    // Initialize default selections visually
+    setActiveSeg(segAuth, state.au);
+    setActiveSeg(segCipher, state.en);
+    recalc();
+
+    // ---------- Hero mini dial (decorative, mirrors a fixed example) ----------
+    (function heroDial() {
+      const mount = document.getElementById('hero-dial-mount');
+      const exampleScore = 2.3; // WPA2/CCMP, medium signal -> low-medium
+      const sev = severityFor(exampleScore);
+      const offset = ARC_LENGTH - (exampleScore / 10) * ARC_LENGTH;
+
+      mount.innerHTML = `
+        <div style="display:flex; align-items:center; gap:20px;">
+          <div style="position:relative; width:96px; height:96px; flex-shrink:0;">
+            <svg viewBox="0 0 220 220" width="96" height="96">
+              <circle cx="110" cy="110" r="92" fill="none" stroke="#1A2026" stroke-width="16"/>
+              <circle cx="110" cy="110" r="92" fill="none" stroke="${sev.color}" stroke-width="16"
+                stroke-linecap="round" stroke-dasharray="${ARC_LENGTH}" stroke-dashoffset="${ARC_LENGTH}"
+                transform="rotate(-90 110 110)"
+                style="transition: stroke-dashoffset 1.2s ease 0.3s;" id="hero-dial-arc"/>
+            </svg>
+            <div style="position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
+                        font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:22px; color:${sev.color};">
+              ${exampleScore.toFixed(1)}
+            </div>
+          </div>
+          <div>
+            <div style="font-family:'JetBrains Mono',monospace; font-size:12px; color:${sev.color}; text-transform:uppercase; letter-spacing:0.04em; margin-bottom:4px;">
+              ${sev.label}
+            </div>
+            <div style="font-size:13px; color:#8B92A0; max-width:160px; line-height:1.5;">
+              Severidad técnica estimada para esta configuración
+            </div>
+          </div>
+        </div>
+      `;
+
+      requestAnimationFrame(() => {
+        setTimeout(() => {
+          const arc = document.getElementById('hero-dial-arc');
+          if (arc) arc.style.strokeDashoffset = offset;
+        }, 200);
+      });
+    })();
+
+    // ---------- Scroll reveal ----------
+    const observer = new IntersectionObserver((entries) => {
+      entries.forEach(entry => {
+        if (entry.isIntersecting) {
+          entry.target.classList.add('in');
+          observer.unobserve(entry.target);
+        }
+      });
+    }, { threshold: 0.12 });
+
+    document.querySelectorAll('.reveal').forEach(el => observer.observe(el));
+
+    // ============================================================
+    // APP TABS — alternar entre vista demo y vista "Mis Redes"
+    // ============================================================
+    const tabs = document.querySelectorAll('.app-tab');
+    const views = document.querySelectorAll('.view');
+
+    tabs.forEach(tab => {
+      tab.addEventListener('click', () => {
+        tabs.forEach(t => t.classList.remove('active'));
+        views.forEach(v => v.classList.remove('active'));
+        tab.classList.add('active');
+        document.getElementById(tab.dataset.view).classList.add('active');
+      });
+    });
+
+    // ============================================================
+    // MIS REDES — escaneo real via pywebview
+    // ============================================================
+    (function realScan() {
+      const btnScan = document.getElementById('btn-scan');
+      const scanLabel = document.getElementById('scan-label');
+      const platformPill = document.getElementById('platform-pill');
+      const scanEmpty = document.getElementById('scan-empty');
+      const scanErrorBox = document.getElementById('scan-error-box');
+      const networkGrid = document.getElementById('network-grid');
+      const detailPanel = document.getElementById('detail-panel');
+      const btnExport = document.getElementById('btn-export');
+
+      let lastResults = [];
+      let selectedIndex = null;
+
+      function waitForPywebview(callback, attemptsLeft) {
+        attemptsLeft = attemptsLeft === undefined ? 40 : attemptsLeft;
+        if (window.pywebview && window.pywebview.api) {
+          callback();
+        } else if (attemptsLeft > 0) {
+          setTimeout(() => waitForPywebview(callback, attemptsLeft - 1), 150);
+        } else {
+          platformPill.textContent = 'API no disponible';
+          platformPill.classList.add('unavailable');
+          btnScan.disabled = true;
+        }
+      }
+
+      function checkPlatform() {
+        window.pywebview.api.get_platform_info().then(info => {
+          if (info.scan_available) {
+            platformPill.textContent = 'Windows detectado · listo para escanear';
+            platformPill.classList.add('ready');
+          } else {
+            platformPill.textContent = info.system + ' detectado · modo demostración';
+            platformPill.classList.add('unavailable');
+          }
+        }).catch(() => {
+          platformPill.textContent = 'No se pudo verificar la plataforma';
+        });
+      }
+
+      function showError(message) {
+        scanErrorBox.innerHTML = `<div class="scan-error"><b>No se pudo completar el escaneo.</b><br>${message}</div>`;
+      }
+
+      function clearError() {
+        scanErrorBox.innerHTML = '';
+      }
+
+      function renderCard(net, index) {
+        const sev = severityFor(net.wss_score);
+        const card = document.createElement('div');
+        card.className = 'net-card';
+        card.dataset.index = index;
+
+        const anomalyLine = net.anomaly
+          ? `<div class="net-card-anomaly">⚠ SSID duplicado detectado (BSSID distinto)</div>`
+          : '';
+
+        card.innerHTML = `
+          <div class="net-card-top">
+            <div class="net-card-ssid">${escapeHtml(net.ssid)}</div>
+            <div class="net-card-score" style="color:${sev.color};">${net.wss_score.toFixed(1)}</div>
+          </div>
+          <div class="net-card-meta">
+            <span>${escapeHtml(net.auth_raw)}</span>
+            <span>·</span>
+            <span>${escapeHtml(net.cipher_raw)}</span>
+            <span>·</span>
+            <span>${net.signal_pct != null ? net.signal_pct + '%' : 's/d'}</span>
+          </div>
+          <span class="net-card-badge" style="background:${sev.color}20; color:${sev.color};">${net.classification}</span>
+          ${anomalyLine}
+        `;
+
+        card.addEventListener('click', () => {
+          document.querySelectorAll('.net-card').forEach(c => c.classList.remove('selected'));
+          card.classList.add('selected');
+          selectedIndex = index;
+          renderDetail(net);
+        });
+
+        return card;
+      }
+
+      function escapeHtml(str) {
+        const div = document.createElement('div');
+        div.textContent = str == null ? '' : String(str);
+        return div.innerHTML;
+      }
+
+      function renderDetail(net) {
+        const sev = severityFor(net.wss_score);
+        detailPanel.style.display = 'block';
+        detailPanel.innerHTML = `
+          <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:24px; flex-wrap:wrap;">
+            <div>
+              <div style="font-family:var(--font-mono); font-size:13px; color:var(--text-faint); margin-bottom:6px;">
+                ${escapeHtml(net.bssid)}
+              </div>
+              <div style="font-family:var(--font-display); font-size:22px; font-weight:600;">
+                ${escapeHtml(net.ssid)}
+              </div>
+            </div>
+            <div style="text-align:right;">
+              <div style="font-family:var(--font-display); font-size:36px; font-weight:700; color:${sev.color};">
+                ${net.wss_score.toFixed(1)}
+              </div>
+              <div class="net-card-badge" style="background:${sev.color}20; color:${sev.color};">${net.classification}</div>
+            </div>
+          </div>
+
+          <div class="vector-box" style="margin-top:24px;">
+            <div class="vb-label">Vector WSS</div>
+            <div class="vb-value">${escapeHtml(net.wss_vector)}</div>
+          </div>
+
+          <div class="breakdown">
+            ${detailBar('AU · Autenticación', net.au, net.auth_raw)}
+            ${detailBar('EN · Cifrado', net.en, net.cipher_raw)}
+            ${detailBar('EX · Exposición', net.ex, (net.rssi_dbm != null ? net.rssi_dbm + ' dBm' : 'señal ' + net.signal_pct + '%'))}
+            ${detailBar('AN · Anomalía', net.an, net.anomaly ? 'SSID duplicado' : 'sin anomalía')}
+            ${detailBar('BM · Benchmark', net.bm, net.bm_label)}
+          </div>
+        `;
+      }
+
+      function detailBar(label, value, sub) {
+        let color = '#6FE3A6';
+        if (value > 0.75) color = '#FF5640';
+        else if (value > 0.45) color = '#FF9156';
+        else if (value > 0.15) color = '#F2C45C';
+        const pct = Math.round(value * 100);
+        return `
+          <div class="bd-row">
+            <span class="bd-label" style="width:170px;">${label}</span>
+            <div class="bd-bar"><div class="bd-fill" style="width:${pct}%; background:${color};"></div></div>
+            <span class="bd-pct">${value.toFixed(2)}</span>
+          </div>
+          <div style="font-size:11px; color:var(--text-faint); margin:-4px 0 4px 182px;">${escapeHtml(sub)}</div>
+        `;
+      }
+
+      function renderResults(results) {
+        lastResults = results;
+        networkGrid.innerHTML = '';
+
+        if (!results.length) {
+          scanEmpty.style.display = 'block';
+          networkGrid.style.display = 'none';
+          detailPanel.style.display = 'none';
+          btnExport.style.display = 'none';
+          return;
+        }
+
+        scanEmpty.style.display = 'none';
+        networkGrid.style.display = 'grid';
+        btnExport.style.display = 'inline-block';
+
+        results.forEach((net, i) => networkGrid.appendChild(renderCard(net, i)));
+
+        // Seleccionar automaticamente la red mas severa (ya viene ordenada por score desc.)
+        networkGrid.firstChild.classList.add('selected');
+        renderDetail(results[0]);
+        selectedIndex = 0;
+      }
+
+      function setLoading(isLoading) {
+        btnScan.classList.toggle('loading', isLoading);
+        btnScan.disabled = isLoading;
+        scanLabel.textContent = isLoading ? 'Escaneando…' : 'Escanear redes';
+      }
+
+      btnScan.addEventListener('click', () => {
+        clearError();
+        setLoading(true);
+
+        window.pywebview.api.scan_networks().then(response => {
+          setLoading(false);
+          if (response.ok) {
+            renderResults(response.results);
+          } else {
+            showError(response.error || 'Error desconocido durante el escaneo.');
+            // Si el escaneo real no esta disponible (p.ej. no-Windows), ofrecemos modo demo
+            if (/Windows/i.test(response.error || '')) {
+              offerDemoFallback();
+            }
+          }
+        }).catch(err => {
+          setLoading(false);
+          showError('No se pudo comunicar con el motor de escaneo: ' + err);
+        });
+      });
+
+      function offerDemoFallback() {
+        const existing = document.getElementById('demo-fallback-btn');
+        if (existing) return;
+        const btn = document.createElement('button');
+        btn.id = 'demo-fallback-btn';
+        btn.className = 'btn-secondary-sm';
+        btn.style.marginTop = '12px';
+        btn.textContent = 'Ver con datos de ejemplo';
+        btn.addEventListener('click', () => {
+          clearError();
+          window.pywebview.api.scan_networks_demo().then(response => {
+            renderResults(response.results);
+          });
+        });
+        scanErrorBox.appendChild(btn);
+      }
+
+      btnExport.addEventListener('click', () => {
+        window.pywebview.api.export_json(JSON.stringify(lastResults)).then(res => {
+          if (res.ok) {
+            btnExport.textContent = 'Exportado: ' + res.filename;
+            setTimeout(() => { btnExport.textContent = 'Exportar JSON'; }, 2500);
+          } else {
+            showError(res.error || 'No se pudo exportar el archivo.');
+          }
+        });
+      });
+
+      waitForPywebview(checkPlatform);
+    })();
+  })();
+  </script>
+
+  </body>
+</html>
