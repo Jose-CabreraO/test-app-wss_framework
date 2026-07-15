@@ -915,10 +915,10 @@
     padding: 4px 10px;
     border-radius: 100px;
   }
-  .net-card-anomaly {
+  .net-card-observation {
     margin-top: 10px;
     font-size: 11.5px;
-    color: var(--severity-critical);
+    color: var(--text-dim);
     display: flex;
     align-items: center;
     gap: 6px;
@@ -1117,8 +1117,8 @@
             </div>
             <div class="toggle-row">
               <div class="toggle-text">
-                SSID duplicado detectado
-                <span class="sub">Mismo SSID, BSSID distinto al registrado</span>
+                Condicion observable
+                <span class="sub">Requiere verificacion tecnica segun regla metodologica</span>
               </div>
               <div class="switch" id="anomaly-switch"></div>
             </div>
@@ -1294,10 +1294,16 @@
         <div class="scan-toolbar">
           <button class="btn-scan" id="btn-scan">
             <span class="spinner"></span>
-            <span class="scan-label" id="scan-label">Escanear redes</span>
+            <span class="scan-label" id="scan-label">Escanear redes de este equipo</span>
           </button>
+          <button class="btn-secondary-sm" id="btn-import">Cargar archivo TXT</button>
+          <button class="btn-secondary-sm" id="btn-demo-source">Ver demostración</button>
           <div class="scan-status">
             <span id="platform-pill" class="pf-pill">Verificando plataforma…</span>
+            <span id="source-pill" class="pf-pill" style="display:none;">Origen no definido</span>
+            <label class="pf-pill" id="anon-label" style="display:none;">
+              <input type="checkbox" id="export-anon" style="margin-right:6px;"> Anonimizar
+            </label>
             <button class="btn-secondary-sm" id="btn-export" style="display:none;">Exportar JSON</button>
           </div>
         </div>
@@ -1577,6 +1583,11 @@
       const networkGrid = document.getElementById('network-grid');
       const detailPanel = document.getElementById('detail-panel');
       const btnExport = document.getElementById('btn-export');
+      const btnImport = document.getElementById('btn-import');
+      const btnDemoSource = document.getElementById('btn-demo-source');
+      const sourcePill = document.getElementById('source-pill');
+      const exportAnon = document.getElementById('export-anon');
+      const anonLabel = document.getElementById('anon-label');
 
       let lastResults = [];
       let selectedIndex = null;
@@ -1591,6 +1602,8 @@
           platformPill.textContent = 'API no disponible';
           platformPill.classList.add('unavailable');
           btnScan.disabled = true;
+          btnImport.disabled = true;
+          btnDemoSource.disabled = true;
         }
       }
 
@@ -1616,20 +1629,44 @@
         scanErrorBox.innerHTML = '';
       }
 
+      function isComplete(net) {
+        return net && net.evaluation_status === 'COMPLETE' && net.wss_score != null;
+      }
+
+      function formatScore(net, fallback) {
+        return isComplete(net) ? Number(net.wss_score).toFixed(1) : fallback;
+      }
+
+      function sourceText(metadata) {
+        if (!metadata) return 'Origen no definido';
+        if (metadata.source_type === 'LIVE_SCAN') return 'Escaneo real';
+        if (metadata.source_type === 'FILE_IMPORT') return 'Archivo cargado: ' + (metadata.source_filename || 'TXT');
+        if (metadata.source_type === 'DEMO') return 'Datos de demostracion';
+        return metadata.source_label || metadata.source_type || 'Origen no definido';
+      }
+
+      function setSource(metadata) {
+        sourcePill.style.display = metadata ? 'inline-flex' : 'none';
+        sourcePill.textContent = sourceText(metadata);
+        sourcePill.classList.toggle('unavailable', !!(metadata && metadata.synthetic_data));
+        sourcePill.classList.toggle('ready', !!(metadata && !metadata.synthetic_data));
+      }
+
       function renderCard(net, index) {
-        const sev = severityFor(net.wss_score);
+        const complete = isComplete(net);
+        const sev = complete ? severityFor(net.wss_score) : { color: '#9BA7B4', label: 'No evaluable' };
         const card = document.createElement('div');
         card.className = 'net-card';
         card.dataset.index = index;
 
-        const anomalyLine = net.anomaly
-          ? `<div class="net-card-anomaly">⚠ SSID duplicado detectado (BSSID distinto)</div>`
+        const observationText = observationLabel(net);
+        const observationLine = observationText
+          ? `<div class="net-card-observation">${escapeHtml(observationText)}</div>`
           : '';
-
         card.innerHTML = `
           <div class="net-card-top">
             <div class="net-card-ssid">${escapeHtml(net.ssid)}</div>
-            <div class="net-card-score" style="color:${sev.color};">${net.wss_score.toFixed(1)}</div>
+            <div class="net-card-score" style="color:${sev.color};">${formatScore(net, 's/p')}</div>
           </div>
           <div class="net-card-meta">
             <span>${escapeHtml(net.auth_raw)}</span>
@@ -1638,8 +1675,13 @@
             <span>·</span>
             <span>${net.signal_pct != null ? net.signal_pct + '%' : 's/d'}</span>
           </div>
-          <span class="net-card-badge" style="background:${sev.color}20; color:${sev.color};">${net.classification}</span>
-          ${anomalyLine}
+          <div class="net-card-meta">
+            <span>${radioCountLabel(net)}</span>
+            <span>·</span>
+            <span>${escapeHtml((net.observed_bands || []).join(' y ') || net.band || 'banda s/d')}</span>
+          </div>
+          <span class="net-card-badge" style="background:${sev.color}20; color:${sev.color};">${complete ? net.classification : 'No se pudo completar la evaluación'}</span>
+          ${observationLine}
         `;
 
         card.addEventListener('click', () => {
@@ -1658,8 +1700,51 @@
         return div.innerHTML;
       }
 
+      function observationLabel(net) {
+        if (net.observation_status === 'MULTI_RADIO_OBSERVED') return 'Se observaron varias radios compatibles con una red de doble banda o infraestructura con múltiples puntos de acceso.';
+        if (net.observation_status === 'MULTI_AP_OBSERVED') return 'Varios puntos de acceso observados';
+        if (net.observation_status === 'SECURITY_PROFILE_MISMATCH') return 'Configuraciones diferentes: requiere verificación técnica';
+        if (net.observation_status === 'HIDDEN_SSID') return 'SSID oculto observado individualmente';
+        return '';
+      }
+
+      function radioCountLabel(net) {
+        const count = net.observed_bssid_count || 1;
+        return count === 1 ? '1 radio observada' : count + ' radios observadas';
+      }
+
+      function anDetailMessage(net) {
+        if (net.an === 0) return 'No se identificó una condición anómala.';
+        return net.observation_message || 'Condición anómala registrada.';
+      }
+
+      function buildDisplayGroups(results) {
+        const groups = new Map();
+        results.forEach(net => {
+          const key = net.hidden_ssid ? net.bssid : net.ssid;
+          if (!groups.has(key)) {
+            groups.set(key, { ...net, group_items: [], observed_bands: [], observed_bssid_count: 0 });
+          }
+          const group = groups.get(key);
+          group.group_items.push(net);
+          group.observed_bssid_count = group.group_items.length;
+          const bands = new Set(group.observed_bands || []);
+          (net.observed_bands || []).forEach(b => bands.add(b));
+          if (net.band) bands.add(net.band);
+          group.observed_bands = [...bands];
+          if (net.observation_status === 'SECURITY_PROFILE_MISMATCH') {
+            group.observation_status = net.observation_status;
+            group.observation_message = net.observation_message;
+            group.requires_technical_review = true;
+          }
+        });
+        return [...groups.values()];
+      }
+
       function renderDetail(net) {
-        const sev = severityFor(net.wss_score);
+        const complete = isComplete(net);
+        const sev = complete ? severityFor(net.wss_score) : { color: '#9BA7B4', label: 'No evaluable' };
+        const unknownFields = (net.unknown_fields || []).join(', ') || 'No informado';
         detailPanel.style.display = 'block';
         detailPanel.innerHTML = `
           <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:24px; flex-wrap:wrap;">
@@ -1673,28 +1758,46 @@
             </div>
             <div style="text-align:right;">
               <div style="font-family:var(--font-display); font-size:36px; font-weight:700; color:${sev.color};">
-                ${net.wss_score.toFixed(1)}
+                ${formatScore(net, 'Sin score')}
               </div>
-              <div class="net-card-badge" style="background:${sev.color}20; color:${sev.color};">${net.classification}</div>
+              <div class="net-card-badge" style="background:${sev.color}20; color:${sev.color};">${complete ? net.classification : 'NO_EVALUABLE'}</div>
             </div>
           </div>
 
           <div class="vector-box" style="margin-top:24px;">
-            <div class="vb-label">Vector WSS</div>
-            <div class="vb-value">${escapeHtml(net.wss_vector)}</div>
+            <div class="vb-label">${complete ? 'Vector WSS' : 'Evaluación incompleta'}</div>
+            <div class="vb-value">${complete ? escapeHtml(net.wss_vector) : 'No se pudo completar la evaluación'}</div>
+            ${complete ? '' : `<div style="font-size:12px; color:var(--text-dim); margin-top:8px;">Campo no interpretado: ${escapeHtml(unknownFields)}. Repetir la evaluación o solicitar revisión técnica. No se asigna score de forma deliberada.</div>`}
           </div>
 
-          <div class="breakdown">
+          <div class="breakdown" style="${complete ? '' : 'display:none;'}">
             ${detailBar('AU · Autenticación', net.au, net.auth_raw)}
             ${detailBar('EN · Cifrado', net.en, net.cipher_raw)}
             ${detailBar('EX · Exposición', net.ex, (net.rssi_dbm != null ? net.rssi_dbm + ' dBm' : 'señal ' + net.signal_pct + '%'))}
-            ${detailBar('AN · Anomalía', net.an, net.anomaly ? 'SSID duplicado' : 'sin anomalía')}
+            ${detailBar('AN · Indicador de condición anómala', net.an, anDetailMessage(net))}
             ${detailBar('BM · Benchmark', net.bm, net.bm_label)}
+          </div>
+          ${technicalList(net)}
+        `;
+      }
+
+      function technicalList(net) {
+        const items = net.group_items || [net];
+        if (items.length <= 1) return '';
+        return `
+          <div class="vector-box" style="margin-top:18px;">
+            <div class="vb-label">Detalle tecnico por BSSID</div>
+            ${items.map(item => `
+              <div style="font-size:12px; color:var(--text-dim); margin-top:8px;">
+                <b>${escapeHtml(item.bssid)}</b> · ${escapeHtml(item.band || 'banda s/d')} · canal ${escapeHtml(item.channel || 's/d')} · señal ${escapeHtml(item.signal_pct || 's/d')}% · ${escapeHtml(item.radio_type || 'radio s/d')} · ${escapeHtml(item.auth_raw)} · ${escapeHtml(item.cipher_raw)}
+              </div>
+            `).join('')}
           </div>
         `;
       }
 
       function detailBar(label, value, sub) {
+        if (value == null) return '';
         let color = '#6FE3A6';
         if (value > 0.75) color = '#FF5640';
         else if (value > 0.45) color = '#FF9156';
@@ -1710,8 +1813,9 @@
         `;
       }
 
-      function renderResults(results) {
+      function renderResults(results, metadata) {
         lastResults = results;
+        setSource(metadata);
         networkGrid.innerHTML = '';
 
         if (!results.length) {
@@ -1719,25 +1823,30 @@
           networkGrid.style.display = 'none';
           detailPanel.style.display = 'none';
           btnExport.style.display = 'none';
+          anonLabel.style.display = 'none';
           return;
         }
 
         scanEmpty.style.display = 'none';
         networkGrid.style.display = 'grid';
         btnExport.style.display = 'inline-block';
+        anonLabel.style.display = 'inline-flex';
 
-        results.forEach((net, i) => networkGrid.appendChild(renderCard(net, i)));
+        const displayItems = buildDisplayGroups(results);
+        displayItems.forEach((net, i) => networkGrid.appendChild(renderCard(net, i)));
 
         // Seleccionar automaticamente la red mas severa (ya viene ordenada por score desc.)
         networkGrid.firstChild.classList.add('selected');
-        renderDetail(results[0]);
+        renderDetail(displayItems[0]);
         selectedIndex = 0;
       }
 
       function setLoading(isLoading) {
         btnScan.classList.toggle('loading', isLoading);
         btnScan.disabled = isLoading;
-        scanLabel.textContent = isLoading ? 'Escaneando…' : 'Escanear redes';
+        btnImport.disabled = isLoading;
+        btnDemoSource.disabled = isLoading;
+        scanLabel.textContent = isLoading ? 'Escaneando…' : 'Escanear redes de este equipo';
       }
 
       btnScan.addEventListener('click', () => {
@@ -1747,7 +1856,7 @@
         window.pywebview.api.scan_networks().then(response => {
           setLoading(false);
           if (response.ok) {
-            renderResults(response.results);
+            renderResults(response.results, response.metadata);
           } else {
             showError(response.error || 'Error desconocido durante el escaneo.');
             // Si el escaneo real no esta disponible (p.ej. no-Windows), ofrecemos modo demo
@@ -1758,6 +1867,31 @@
         }).catch(err => {
           setLoading(false);
           showError('No se pudo comunicar con el motor de escaneo: ' + err);
+        });
+      });
+
+      btnImport.addEventListener('click', () => {
+        clearError();
+        setLoading(true);
+
+        window.pywebview.api.import_txt_file().then(response => {
+          setLoading(false);
+          if (response.ok) {
+            renderResults(response.results, response.metadata);
+          } else if (!response.cancelled) {
+            showError(response.error || 'No se pudo cargar el archivo TXT.');
+          }
+        }).catch(err => {
+          setLoading(false);
+          showError('No se pudo comunicar con el importador: ' + err);
+        });
+      });
+
+      btnDemoSource.addEventListener('click', () => {
+        clearError();
+        window.pywebview.api.scan_networks_demo().then(response => {
+          if (response.ok) renderResults(response.results, response.metadata);
+          else showError(response.error || 'No se pudo cargar la demostración.');
         });
       });
 
@@ -1772,14 +1906,14 @@
         btn.addEventListener('click', () => {
           clearError();
           window.pywebview.api.scan_networks_demo().then(response => {
-            renderResults(response.results);
+            renderResults(response.results, response.metadata);
           });
         });
         scanErrorBox.appendChild(btn);
       }
 
       btnExport.addEventListener('click', () => {
-        window.pywebview.api.export_json(JSON.stringify(lastResults)).then(res => {
+        window.pywebview.api.export_json(exportAnon.checked).then(res => {
           if (res.ok) {
             btnExport.textContent = 'Exportado: ' + res.filename;
             setTimeout(() => { btnExport.textContent = 'Exportar JSON'; }, 2500);

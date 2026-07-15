@@ -14,6 +14,25 @@ import unicodedata
 from datetime import datetime
 
 
+ENGINE_VERSION = "2.0"
+
+OBS_SINGLE_BSSID = "SINGLE_BSSID"
+OBS_MULTI_RADIO = "MULTI_RADIO_OBSERVED"
+OBS_MULTI_AP = "MULTI_AP_OBSERVED"
+OBS_SECURITY_PROFILE_MISMATCH = "SECURITY_PROFILE_MISMATCH"
+OBS_HIDDEN_SSID = "HIDDEN_SSID"
+OBS_BASELINE_MISMATCH = "BASELINE_MISMATCH"
+
+OBSERVATION_MESSAGES = {
+    OBS_SINGLE_BSSID: "Se observo un unico BSSID para este nombre de red.",
+    OBS_MULTI_RADIO: "Se observaron varias radios asociadas al mismo nombre de red. Esto es habitual en routers de doble banda.",
+    OBS_MULTI_AP: "Se observaron varios puntos de acceso con el mismo nombre de red. Esto puede ser normal en redes mesh, repetidores o instalaciones con varios equipos.",
+    OBS_SECURITY_PROFILE_MISMATCH: "Se observaron configuraciones de seguridad diferentes bajo el mismo nombre de red. Requiere verificacion tecnica.",
+    OBS_HIDDEN_SSID: "Red con SSID oculto observada individualmente por BSSID.",
+    OBS_BASELINE_MISMATCH: "Estado reservado para una linea base autorizada futura.",
+}
+
+
 # ---------------------------------------------------------------------------
 # Modelo WSS - pesos y tablas de normalizacion
 # ---------------------------------------------------------------------------
@@ -113,7 +132,7 @@ def classify_score(score):
 
 def _repair_mojibake(text):
     """Repara texto UTF-8 leido accidentalmente como latin-1, si aplica."""
-    if not isinstance(text, str) or not any(marker in text for marker in ("Ã", "Â")):
+    if not isinstance(text, str) or not any(marker in text for marker in (chr(0x00C3), chr(0x00C2))):
         return text
     try:
         return text.encode("latin-1").decode("utf-8")
@@ -324,27 +343,86 @@ def parse_netsh_output(raw_output):
     if current and current.get("bssids"):
         networks.append(current)
 
+    hidden_count = 0
+    for net in networks:
+        net["hidden_ssid"] = net["ssid"] == "(SSID oculto)"
+        if net["hidden_ssid"]:
+            hidden_count += 1
+            net["ssid"] = f"SSID oculto {hidden_count}"
+
     return networks
 
 
-def detect_anomalies(networks):
-    """
-    Heuristica de deteccion de condicion anomala de infraestructura:
-    mismo SSID anunciado por mas de un BSSID. No confirma un ataque.
-    """
-    bssids_by_ssid = {}
+def analyze_observations(networks):
+    """Clasifica observaciones de infraestructura sin convertirlas en anomalia WSS."""
+    grouped = {}
     for net in networks:
-        ssid = net["ssid"]
-        bssids_by_ssid.setdefault(ssid, set())
-        for b in net.get("bssids", []):
-            if b.get("bssid"):
-                bssids_by_ssid[ssid].add(b["bssid"].lower())
+        if net.get("hidden_ssid"):
+            grouped[net["ssid"]] = {
+                "status": OBS_HIDDEN_SSID,
+                "message": OBSERVATION_MESSAGES[OBS_HIDDEN_SSID],
+                "bssid_count": len(net.get("bssids", [])),
+                "bands": sorted({b.get("band") for b in net.get("bssids", []) if b.get("band")}),
+                "requires_review": False,
+            }
+            continue
+        grouped.setdefault(net["ssid"], []).append(net)
 
-    flagged = {ssid for ssid, bssid_set in bssids_by_ssid.items() if len(bssid_set) > 1}
-    return flagged
+    observations = {}
+    for ssid, nets in grouped.items():
+        if isinstance(nets, dict):
+            observations[ssid] = nets
+            continue
+
+        bssids = []
+        bands = set()
+        profiles = set()
+        for net in nets:
+            auth_key = _map_auth(net.get("auth_raw"))
+            cipher_key = _map_cipher(net.get("cipher_raw"))
+            profiles.add((auth_key, cipher_key))
+            for bssid in net.get("bssids", []):
+                bssids.append(bssid)
+                if bssid.get("band"):
+                    bands.add(bssid["band"])
+
+        if len(profiles) > 1:
+            status = OBS_SECURITY_PROFILE_MISMATCH
+            requires_review = True
+        elif len(bssids) <= 1:
+            status = OBS_SINGLE_BSSID
+            requires_review = False
+        elif len(bands) > 1:
+            status = OBS_MULTI_RADIO
+            requires_review = False
+        else:
+            status = OBS_MULTI_AP
+            requires_review = False
+
+        observations[ssid] = {
+            "status": status,
+            "message": OBSERVATION_MESSAGES[status],
+            "bssid_count": len(bssids),
+            "bands": sorted(bands),
+            "requires_review": requires_review,
+        }
+
+    return observations
 
 
-def evaluate_networks(raw_output=None):
+def detect_anomalies(networks):
+    """Compatibilidad: AN=1 queda reservado y no se asigna automaticamente."""
+    return set()
+
+
+def evaluate_networks(
+    raw_output=None,
+    source_type="LIVE_SCAN",
+    source_label=None,
+    source_filename=None,
+    captured_at=None,
+    synthetic_data=False,
+):
     """
     Punto de entrada principal: escanea si no se provee raw_output, parsea,
     detecta anomalias y calcula el WSS para cada BSSID evaluable.
@@ -352,15 +430,23 @@ def evaluate_networks(raw_output=None):
     if raw_output is None:
         raw_output = run_netsh_scan()
 
+    processed_at = datetime.now().isoformat()
     networks = parse_netsh_output(raw_output)
-    anomalous_ssids = detect_anomalies(networks)
+    observations = analyze_observations(networks)
 
     results = []
     for net in networks:
         ssid = net["ssid"]
         auth_key = _map_auth(net.get("auth_raw"))
         cipher_key = _map_cipher(net.get("cipher_raw"))
-        is_anomalous_ssid = ssid in anomalous_ssids
+        observation = observations.get(ssid, {
+            "status": OBS_SINGLE_BSSID,
+            "message": OBSERVATION_MESSAGES[OBS_SINGLE_BSSID],
+            "bssid_count": len(net.get("bssids", [])),
+            "bands": [],
+            "requires_review": False,
+        })
+        is_anomalous_ssid = False
 
         for bssid_info in net["bssids"]:
             rssi = _signal_pct_to_rssi(bssid_info.get("signal_pct"))
@@ -412,6 +498,12 @@ def evaluate_networks(raw_output=None):
                 "rssi_dbm": rssi,
                 "exposure_label": ex_label,
                 "anomaly": is_anomalous_ssid,
+                "observation_status": observation["status"],
+                "observation_message": observation["message"],
+                "requires_technical_review": observation["requires_review"],
+                "observed_bssid_count": observation["bssid_count"],
+                "observed_bands": observation["bands"],
+                "hidden_ssid": net.get("hidden_ssid", False),
                 "evaluation_status": evaluation_status,
                 "unknown_fields": unknown_fields,
                 "au": au_val,
@@ -423,7 +515,15 @@ def evaluate_networks(raw_output=None):
                 "wss_score": score,
                 "classification": classification,
                 "wss_vector": vector,
-                "timestamp": datetime.now().isoformat(),
+                "timestamp": processed_at,
+                "source_type": source_type,
+                "source_label": source_label or source_type,
+                "source_filename": source_filename,
+                "captured_at": captured_at,
+                "processed_at": processed_at,
+                "engine_version": ENGINE_VERSION,
+                "synthetic_data": synthetic_data,
+                "recommendation_rule": None,
             })
 
     # Orden por severidad descendente: resultados incompletos quedan al final.
@@ -470,7 +570,12 @@ SSID 3 : CAFE_INVITADOS
 
 def evaluate_networks_demo():
     """Usa una salida de ejemplo para probar la interfaz sin Windows."""
-    return evaluate_networks(raw_output=_SAMPLE_NETSH_OUTPUT)
+    return evaluate_networks(
+        raw_output=_SAMPLE_NETSH_OUTPUT,
+        source_type="DEMO",
+        source_label="Datos sinteticos de demostracion",
+        synthetic_data=True,
+    )
 
 
 if __name__ == "__main__":
