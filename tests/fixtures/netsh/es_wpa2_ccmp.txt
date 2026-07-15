@@ -1,0 +1,18 @@
+ 
+Nombre de interfaz : Wi-Fi 
+Actualmente hay 1 redes visibles. 
+
+
+SSID 1 : LAB-WPA2-AES
+    Tipo de red             : Infraestructura
+    Autenticación           : WPA2-Personal
+    Cifrado                 : CCMP 
+    BSSID 1                 : 1a:de:93:7e:27:2d
+         Señal             : 99%  
+         Tipo de radio         : 802.11g
+         Banda               : 2,4 GHz
+         Canal            : 6 
+mscs QoS          admitidos: 0
+         Asignación de QoS admitida: 0
+  Velocidades básicas (Mbps): 1 2 5.5 11
+    Otras velocidades (Mbps): 6 9 12 18 24 36 48 54

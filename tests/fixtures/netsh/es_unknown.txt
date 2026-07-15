@@ -1,0 +1,12 @@
+Nombre de interfaz : Wi-Fi
+Actualmente hay 1 redes visibles.
+
+SSID 1 : LAB-UNKNOWN
+    Tipo de red             : Infraestructura
+    Autenticacion           : Metodo-No-Reconocido
+    Cifrado                 : Cifrado-No-Reconocido
+    BSSID 1                 : 00:11:22:33:44:55
+         Senal              : 80%
+         Tipo de radio      : 802.11n
+         Banda              : 2,4 GHz
+         Canal              : 11

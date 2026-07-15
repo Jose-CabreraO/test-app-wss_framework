@@ -1,0 +1,12 @@
+Interface name : Wi-Fi
+There is 1 network currently visible.
+
+SSID 1 : LAB-EN-WPA2
+    Network type            : Infrastructure
+    Authentication          : WPA2-Personal
+    Encryption              : CCMP
+    BSSID 1                 : 66:55:44:33:22:11
+         Signal             : 88%
+         Radio type         : 802.11ac
+         Band               : 5 GHz
+         Channel            : 36
