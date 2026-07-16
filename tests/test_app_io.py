@@ -93,10 +93,14 @@ def test_export_json_from_memory_with_anonymization(tmp_path, monkeypatch):
     api.import_txt_file(str(FIXTURES / "es_wpa3_ccmp.txt"))
     monkeypatch.chdir(tmp_path)
 
-    response = api.export_json(anonymize=True)
+    response = api.export_json(anonymize=True, selected_path=tmp_path / "reporte_sin_extension")
 
     assert response["ok"] is True
-    assert (tmp_path / response["filename"]).exists()
+    assert response["filename"] == "reporte_sin_extension.json"
+    assert Path(response["saved_path"]).exists()
+    assert response["file_type"] == "JSON"
+    assert response["anonymized"] is True
+    assert response["generated_at"]
     assert response["report"]["report_metadata"]["report_version"] == "2.0"
     assert response["report"]["report_metadata"]["anonymized"] is True
     assert response["report"]["results"][0]["ssid"] == "SSID-001"

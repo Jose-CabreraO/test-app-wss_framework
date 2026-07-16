@@ -1,5 +1,7 @@
 wss_report_*.json
 wss_report_*.pdf
+WSS_Reporte_*.json
+WSS_Reporte_*.pdf
 __pycache__/
 .pytest_cache/
 .venv/

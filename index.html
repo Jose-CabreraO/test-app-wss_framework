@@ -837,6 +837,15 @@
     transition: all 0.15s ease;
   }
   .btn-secondary-sm:hover { border-color: var(--text-dim); color: var(--text); }
+  .scan-select {
+    font-family: var(--font-body);
+    font-size: 13px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: var(--bg-panel);
+    color: var(--text);
+    padding: 9px 12px;
+  }
 
   .scan-empty {
     border: 1px dashed var(--line);
@@ -953,6 +962,54 @@
     display: flex;
     align-items: center;
     gap: 6px;
+    line-height: 1.5;
+  }
+  .action-summary {
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 12px;
+    margin: 12px 0;
+    background: rgba(255,255,255,0.025);
+  }
+  .action-summary-title {
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--text);
+    line-height: 1.45;
+    margin-bottom: 6px;
+  }
+  .action-summary-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 10px;
+  }
+  .action-pill {
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    padding: 3px 8px;
+    color: var(--text-dim);
+    font-size: 12.5px;
+  }
+  .alternatives-toggle {
+    margin-top: 8px;
+    border: none;
+    background: transparent;
+    color: var(--severity-low);
+    cursor: pointer;
+    font-size: 13.5px;
+    padding: 4px 0;
+  }
+  .alternatives-toggle:focus-visible {
+    outline: 2px solid var(--severity-low);
+    outline-offset: 3px;
+  }
+  .alternatives-list[hidden] { display: none; }
+  .alternatives-list {
+    margin-top: 8px;
+    padding-left: 18px;
+    color: var(--text-dim);
+    font-size: 13.5px;
     line-height: 1.5;
   }
 
@@ -1481,14 +1538,24 @@
           <div class="scan-status">
             <span id="platform-pill" class="pf-pill">Verificando plataforma…</span>
             <span id="source-pill" class="pf-pill" style="display:none;">Origen no definido</span>
+            <label class="pf-pill" id="profile-label" style="display:none;">
+              ¿Cuál es su relación con esta red?
+              <select id="user-profile" class="scan-select">
+                <option value="NETWORK_OWNER">Pertenece a mi organización</option>
+                <option value="NETWORK_USER">Solo deseo conectarme</option>
+                <option value="GENERAL" selected>No estoy seguro</option>
+              </select>
+            </label>
             <label class="pf-pill" id="anon-label" style="display:none;">
               <input type="checkbox" id="export-anon" style="margin-right:6px;"> Anonimizar
             </label>
             <button class="btn-secondary-sm" id="btn-export" style="display:none;">Exportar JSON</button>
+            <button class="btn-secondary-sm" id="btn-export-pdf" style="display:none;">Exportar PDF</button>
           </div>
         </div>
 
         <div id="scan-error-box"></div>
+        <div id="export-status-box"></div>
 
         <div id="scan-empty" class="scan-empty">
           <div class="se-icon">◌</div>
@@ -1821,15 +1888,20 @@
       const networkGrid = document.getElementById('network-grid');
       const detailPanel = document.getElementById('detail-panel');
       const btnExport = document.getElementById('btn-export');
+      const btnExportPdf = document.getElementById('btn-export-pdf');
       const btnImport = document.getElementById('btn-import');
       const btnDemoSource = document.getElementById('btn-demo-source');
       const sourcePill = document.getElementById('source-pill');
       const exportAnon = document.getElementById('export-anon');
       const anonLabel = document.getElementById('anon-label');
+      const profileLabel = document.getElementById('profile-label');
+      const userProfile = document.getElementById('user-profile');
+      const exportStatusBox = document.getElementById('export-status-box');
 
       let lastResults = [];
       let selectedIndex = null;
       let activeDetailButton = null;
+      let currentMetadata = null;
 
       function waitForPywebview(callback, attemptsLeft) {
         attemptsLeft = attemptsLeft === undefined ? 40 : attemptsLeft;
@@ -1866,6 +1938,36 @@
 
       function clearError() {
         scanErrorBox.innerHTML = '';
+      }
+
+      function showExportStatus(response) {
+        exportStatusBox.innerHTML = `
+          <div class="scan-error" style="border-color:rgba(111,227,166,0.35); background:rgba(111,227,166,0.08); color:var(--text);">
+            <b>Reporte guardado correctamente.</b><br>
+            <span>${escapeHtml(response.saved_path)}</span>
+            <div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:12px;">
+              <button type="button" class="btn-secondary-sm" id="btn-open-export">Abrir archivo</button>
+              <button type="button" class="btn-secondary-sm" id="btn-show-export">Mostrar en carpeta</button>
+            </div>
+          </div>
+        `;
+        document.getElementById('btn-open-export').addEventListener('click', () => {
+          window.pywebview.api.open_exported_file(response.saved_path).then(result => {
+            if (!result.ok) showError(result.error || 'No se pudo abrir el archivo.');
+          });
+        });
+        document.getElementById('btn-show-export').addEventListener('click', () => {
+          window.pywebview.api.show_exported_file_in_folder(response.saved_path).then(result => {
+            if (!result.ok) showError(result.error || 'No se pudo mostrar la carpeta.');
+          });
+        });
+      }
+
+      function showExportCancelled(button, label) {
+        exportStatusBox.innerHTML = `
+          <div class="detail-line">La exportación fue cancelada.</div>
+        `;
+        button.textContent = label;
       }
 
       function isComplete(net) {
@@ -1910,6 +2012,31 @@
         BASELINE_MISMATCH: 'Diferencia con línea base autorizada',
       };
 
+      const ACTION_LABELS = {
+        PRIMARY: 'Acción principal recomendada',
+        ALTERNATIVE: 'Alternativa inmediata',
+        DEFINITIVE: 'Solución definitiva',
+        COMPLEMENTARY: 'Complementaria',
+      };
+
+      const TARGET_USER_LABELS = {
+        NETWORK_OWNER: 'Propietario o responsable de la red',
+        NETWORK_USER: 'Usuario que desea conectarse',
+        TECHNICAL_RESPONSIBLE: 'Responsable técnico',
+        GENERAL: 'Recomendación general',
+      };
+
+      const LEVEL_LABELS = {
+        LOW: 'Bajo',
+        MEDIUM: 'Medio',
+        HIGH: 'Alto',
+        NO_COST: 'Sin costo',
+        UNKNOWN: 'Desconocido',
+        IMMEDIATE: 'Inmediato',
+        SHORT_TERM: 'Corto plazo',
+        PLANNED: 'Planificado',
+      };
+
       function ruleDisplayName(ruleId) {
         if (!ruleId) return 's/d';
         return RULE_NAMES[ruleId] || ruleId;
@@ -1917,6 +2044,18 @@
 
       function translateValue(value, dictionary) {
         return dictionary[value] || value || 's/d';
+      }
+
+      function actionLabel(value) {
+        return ACTION_LABELS[value] || value || 'Acción';
+      }
+
+      function levelLabel(value) {
+        return LEVEL_LABELS[value] || value || 's/d';
+      }
+
+      function targetUserLabel(value) {
+        return TARGET_USER_LABELS[value] || value || 's/d';
       }
 
       function formatLocalDateTime(value) {
@@ -1970,9 +2109,7 @@
           <div class="net-card-meta">
             <span>${escapeHtml(net.simple_explanation || 'No hay explicación disponible.')}</span>
           </div>
-          <div class="net-card-meta">
-            <span><b>Acción:</b> ${escapeHtml(net.recommended_action || 'Solicitar revisión técnica.')}</span>
-          </div>
+          ${renderActionSummary(net, index)}
           <div class="net-card-meta">
             <span><b>Prioridad:</b> ${escapeHtml(net.priority || 'No definida')}</span>
           </div>
@@ -1986,6 +2123,15 @@
         `;
 
         const toggle = card.querySelector('.technical-toggle');
+        const alternativesToggle = card.querySelector('.alternatives-toggle');
+        if (alternativesToggle) {
+          alternativesToggle.addEventListener('click', () => {
+            const list = card.querySelector('#' + alternativesToggle.getAttribute('aria-controls'));
+            const expanded = alternativesToggle.getAttribute('aria-expanded') === 'true';
+            alternativesToggle.setAttribute('aria-expanded', String(!expanded));
+            if (list) list.hidden = expanded;
+          });
+        }
         toggle.addEventListener('click', () => {
           document.querySelectorAll('.net-card').forEach(c => c.classList.remove('selected'));
           card.classList.add('selected');
@@ -2093,6 +2239,26 @@
         `;
       }
 
+      function detailActions(net) {
+        const actions = visibleActions(net);
+        if (!actions.length) return '<div class="detail-line">Sin acciones priorizadas disponibles.</div>';
+        return actions.map(action => `
+          <div class="radio-card">
+            <div class="detail-section-title">${escapeHtml(actionLabel(action.action_type))}</div>
+            ${detailKeyValues([
+              ['Acción', action.title],
+              ['Descripción', action.description],
+              ['Esfuerzo', levelLabel(action.effort_level)],
+              ['Beneficio esperado', levelLabel(action.benefit_level)],
+              ['Costo estimado', levelLabel(action.cost_level)],
+              ['Plazo', levelLabel(action.time_horizon)],
+              ['Destinatario', targetUserLabel(action.target_user)],
+              ['Orden', action.display_order],
+            ])}
+          </div>
+        `).join('');
+      }
+
       function resetDetailButtons() {
         document.querySelectorAll('.technical-toggle').forEach(button => {
           button.setAttribute('aria-expanded', 'false');
@@ -2118,6 +2284,50 @@
       function radioCountLabel(net) {
         const count = net.observed_bssid_count || 1;
         return count === 1 ? '1 radio observada' : count + ' radios observadas';
+      }
+
+      function visibleActions(net) {
+        return (net.prioritized_actions || [])
+          .filter(action => ['PRIMARY', 'ALTERNATIVE', 'DEFINITIVE'].includes(action.action_type))
+          .sort((a, b) => a.display_order - b.display_order)
+          .slice(0, 3);
+      }
+
+      function actionMeta(action) {
+        return `
+          <div class="action-summary-meta">
+            <span class="action-pill">Esfuerzo: ${escapeHtml(levelLabel(action.effort_level))}</span>
+            <span class="action-pill">Beneficio: ${escapeHtml(levelLabel(action.benefit_level))}</span>
+            <span class="action-pill">Costo: ${escapeHtml(levelLabel(action.cost_level))}</span>
+            <span class="action-pill">Plazo: ${escapeHtml(levelLabel(action.time_horizon))}</span>
+            <span class="action-pill">Destinatario: ${escapeHtml(targetUserLabel(action.target_user))}</span>
+          </div>
+        `;
+      }
+
+      function renderActionSummary(net, index) {
+        const actions = visibleActions(net);
+        if (!actions.length) return '';
+        const primary = actions[0];
+        const alternatives = actions.slice(1);
+        const alternativesId = `alternatives-${index}`;
+        return `
+          <div class="action-summary">
+            <div class="action-summary-title">${escapeHtml(actionLabel(primary.action_type))}</div>
+            <div>${escapeHtml(primary.title)}</div>
+            ${actionMeta(primary)}
+            ${alternatives.length ? `
+              <button type="button" class="alternatives-toggle" aria-expanded="false" aria-controls="${alternativesId}">
+                Ver otras alternativas
+              </button>
+              <ul id="${alternativesId}" class="alternatives-list" hidden>
+                ${alternatives.map(action => `
+                  <li><b>${escapeHtml(actionLabel(action.action_type))}:</b> ${escapeHtml(action.title)} ${actionMeta(action)}</li>
+                `).join('')}
+              </ul>
+            ` : ''}
+          </div>
+        `;
       }
 
       function anDetailMessage(net) {
@@ -2169,6 +2379,8 @@
               ['Regla aplicada', ruleDisplayName(net.recommendation_rule_id)],
               ['Parámetros no interpretados', complete ? 'No aplica' : unknownFields],
             ])}
+            <h3 class="detail-section-title" style="margin-top:16px;">Acciones priorizadas</h3>
+            ${detailActions(net)}
           </section>
 
           <section class="detail-tab-panel" role="tabpanel" id="panel-parameters" aria-labelledby="tab-parameters" data-panel="parameters" hidden>
@@ -2211,6 +2423,7 @@
               ['Estado de la evaluación', translateValue(net.evaluation_status, EVALUATION_STATUS_LABELS)],
               ['Estado de la infraestructura observada', translateValue(net.observation_status, OBSERVATION_STATUS_LABELS)],
               ['Fecha de procesamiento', formatLocalDateTime(net.processed_at)],
+              ['Perfil de usuario seleccionado', targetUserLabel(net.selected_user_profile)],
             ])}
           </section>
         `;
@@ -2254,6 +2467,7 @@
 
       function renderResults(results, metadata) {
         lastResults = results;
+        currentMetadata = metadata || null;
         setSource(metadata);
         networkGrid.innerHTML = '';
 
@@ -2262,14 +2476,18 @@
           networkGrid.style.display = 'none';
           closeDetailPanel();
           btnExport.style.display = 'none';
+          btnExportPdf.style.display = 'none';
           anonLabel.style.display = 'none';
+          profileLabel.style.display = 'none';
           return;
         }
 
         scanEmpty.style.display = 'none';
         networkGrid.style.display = 'grid';
         btnExport.style.display = 'inline-block';
+        btnExportPdf.style.display = 'inline-block';
         anonLabel.style.display = 'inline-flex';
+        profileLabel.style.display = 'inline-flex';
 
         const displayItems = buildDisplayGroups(results);
         displayItems.forEach((net, i) => networkGrid.appendChild(renderCard(net, i)));
@@ -2293,6 +2511,7 @@
 
       btnScan.addEventListener('click', () => {
         clearError();
+        exportStatusBox.innerHTML = '';
         setLoading(true);
 
         window.pywebview.api.scan_networks().then(response => {
@@ -2314,6 +2533,7 @@
 
       btnImport.addEventListener('click', () => {
         clearError();
+        exportStatusBox.innerHTML = '';
         setLoading(true);
 
         window.pywebview.api.import_txt_file().then(response => {
@@ -2331,9 +2551,21 @@
 
       btnDemoSource.addEventListener('click', () => {
         clearError();
+        exportStatusBox.innerHTML = '';
         window.pywebview.api.scan_networks_demo().then(response => {
           if (response.ok) renderResults(response.results, response.metadata);
           else showError(response.error || 'No se pudo cargar la demostración.');
+        });
+      });
+
+      userProfile.addEventListener('change', () => {
+        clearError();
+        window.pywebview.api.update_recommendation_profile(userProfile.value).then(response => {
+          if (response.ok) {
+            renderResults(response.results, response.metadata || currentMetadata);
+          } else {
+            showError(response.error || 'No se pudieron actualizar las recomendaciones.');
+          }
         });
       });
 
@@ -2357,11 +2589,31 @@
       btnExport.addEventListener('click', () => {
         window.pywebview.api.export_json(exportAnon.checked).then(res => {
           if (res.ok) {
-            btnExport.textContent = 'Exportado: ' + res.filename;
-            setTimeout(() => { btnExport.textContent = 'Exportar JSON'; }, 2500);
+            btnExport.textContent = 'Exportar JSON';
+            showExportStatus(res);
+          } else if (res.cancelled) {
+            showExportCancelled(btnExport, 'Exportar JSON');
           } else {
             showError(res.error || 'No se pudo exportar el archivo.');
           }
+        });
+      });
+
+      btnExportPdf.addEventListener('click', () => {
+        btnExportPdf.textContent = 'Generando PDF...';
+        window.pywebview.api.export_pdf(exportAnon.checked).then(res => {
+          if (res.ok) {
+            btnExportPdf.textContent = 'Exportar PDF';
+            showExportStatus(res);
+          } else if (res.cancelled) {
+            showExportCancelled(btnExportPdf, 'Exportar PDF');
+          } else {
+            btnExportPdf.textContent = 'Exportar PDF';
+            showError(res.error || 'No se pudo exportar el PDF.');
+          }
+        }).catch(() => {
+          btnExportPdf.textContent = 'Exportar PDF';
+          showError('No se pudo exportar el PDF.');
         });
       });
 

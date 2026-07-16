@@ -46,7 +46,7 @@ def test_rec_04_wep_synthetic_not_physical_validation():
 
     assert rec["rule_id"] == "REC-04"
     assert rec["simple_status"] == "Requiere atención"
-    assert "No afirmar validacion experimental" in rec["warning"]
+    assert "No afirmar validación experimental" in rec["warning"]
 
 
 def test_rec_05_open_none():

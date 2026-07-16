@@ -4,10 +4,14 @@ Punto de entrada de la aplicacion de escritorio WSS Framework.
 """
 
 import json
+import os
 import platform
+import subprocess
 from copy import deepcopy
 from datetime import datetime
 from pathlib import Path
+
+from fpdf import FPDF
 
 try:
     import webview
@@ -23,6 +27,95 @@ SOURCE_FILE_IMPORT = "FILE_IMPORT"
 SOURCE_DEMO = "DEMO"
 MODEL_STATUS = "PROVISIONAL"
 REPORT_VERSION = "2.0"
+DEFAULT_USER_PROFILE = recommendation_engine.TARGET_GENERAL
+EXPORT_BASENAME = "WSS_Reporte"
+SCOPE_TEXT = (
+    "Este reporte corresponde a una evaluación de parámetros Wi-Fi observables "
+    "y no constituye una auditoría integral de ciberseguridad."
+)
+
+
+def default_export_directory():
+    home = Path.home()
+    for candidate in (home / "Downloads", home / "Descargas", home / "Documents", home / "Documentos", home):
+        if candidate.exists() and candidate.is_dir():
+            return candidate
+    return home
+
+
+def suggested_report_filename(file_type, anonymize=False, generated_at=None):
+    generated_at = generated_at or datetime.now()
+    suffix = "_anon" if anonymize else ""
+    extension = ".pdf" if file_type == "PDF" else ".json"
+    return f"{EXPORT_BASENAME}_{generated_at.strftime('%Y-%m-%d')}_{generated_at.strftime('%H%M%S')}{suffix}{extension}"
+
+
+def ensure_extension(path, extension):
+    file_path = Path(path)
+    if file_path.suffix.lower() != extension.lower():
+        file_path = file_path.with_suffix(extension)
+    return file_path
+
+
+def _dialog_result_to_path(selected):
+    if not selected:
+        return None
+    if isinstance(selected, (list, tuple)):
+        return selected[0] if selected else None
+    return selected
+
+
+def choose_save_path(file_type, anonymize=False):
+    if webview is None or not getattr(webview, "windows", None):
+        return {"ok": False, "error": "Dialogo de guardado no disponible."}
+    extension = ".pdf" if file_type == "PDF" else ".json"
+    filter_label = "PDF (*.pdf)" if file_type == "PDF" else "JSON (*.json)"
+    selected = webview.windows[0].create_file_dialog(
+        webview.SAVE_DIALOG,
+        directory=str(default_export_directory()),
+        save_filename=suggested_report_filename(file_type, anonymize=anonymize),
+        file_types=(filter_label,),
+    )
+    selected_path = _dialog_result_to_path(selected)
+    if not selected_path:
+        return {"ok": False, "cancelled": True}
+    return {"ok": True, "path": ensure_extension(selected_path, extension)}
+
+
+def write_json_report(path, report):
+    output_path = ensure_extension(path, ".json")
+    try:
+        with open(output_path, "w", encoding="utf-8") as f:
+            json.dump(report, f, indent=2, ensure_ascii=False)
+    except OSError as e:
+        return {"ok": False, "error": f"No se pudo guardar el archivo: {e}"}
+    return {"ok": True, "path": output_path}
+
+
+def write_pdf_report(path, pdf_bytes):
+    output_path = ensure_extension(path, ".pdf")
+    try:
+        with open(output_path, "wb") as f:
+            f.write(pdf_bytes)
+    except OSError as e:
+        return {"ok": False, "error": f"No se pudo guardar el archivo: {e}"}
+    return {"ok": True, "path": output_path}
+
+
+def export_success_response(path, file_type, anonymize=False, generated_at=None, report=None):
+    generated_at = generated_at or datetime.now().isoformat()
+    output_path = Path(path)
+    response = {
+        "ok": True,
+        "saved_path": str(output_path),
+        "filename": output_path.name,
+        "file_type": file_type,
+        "anonymized": bool(anonymize),
+        "generated_at": generated_at,
+    }
+    if report is not None:
+        response["report"] = report
+    return response
 
 RECOMMENDATION_FIELDS = (
     "recommendation_rule_id",
@@ -69,7 +162,8 @@ def read_netsh_text_file(path):
     }
 
 
-def process_raw_output(raw_output, source_type, source_label, source_filename=None, synthetic_data=False):
+def process_raw_output(raw_output, source_type, source_label, source_filename=None,
+                       synthetic_data=False, target_user=DEFAULT_USER_PROFILE):
     if source_filename == "es_unknown.txt":
         source_label = "Archivo de prueba con parámetros desconocidos"
 
@@ -80,7 +174,8 @@ def process_raw_output(raw_output, source_type, source_label, source_filename=No
         source_filename=source_filename,
         synthetic_data=synthetic_data,
     )
-    results = apply_recommendations(results)
+    results = assign_hidden_ssid_identifiers(results)
+    results = apply_recommendations(results, target_user=target_user)
     if not results:
         return {
             "ok": False,
@@ -98,11 +193,25 @@ def process_raw_output(raw_output, source_type, source_label, source_filename=No
     return {"ok": True, "results": results, "metadata": metadata}
 
 
-def apply_recommendations(results):
+def assign_hidden_ssid_identifiers(results):
+    hidden_map = {}
+    renamed = []
+    for item in results:
+        copy = deepcopy(item)
+        if copy.get("hidden_ssid"):
+            key = copy.get("bssid") or copy.get("ssid") or f"hidden-{len(hidden_map) + 1}"
+            if key not in hidden_map:
+                hidden_map[key] = f"SSID oculto {len(hidden_map) + 1}"
+            copy["ssid"] = hidden_map[key]
+        renamed.append(copy)
+    return renamed
+
+
+def apply_recommendations(results, target_user=DEFAULT_USER_PROFILE):
     enriched = []
     for item in results:
         copy = deepcopy(item)
-        recommendation = recommendation_engine.recommend_for_result(copy)
+        recommendation = recommendation_engine.recommend_for_result(copy, target_user=target_user)
         copy["recommendation"] = recommendation
         copy["recommendation_rule_id"] = recommendation["rule_id"]
         copy["recommendation_rule_version"] = recommendation["rule_version"]
@@ -117,6 +226,8 @@ def apply_recommendations(results):
         copy["complementary_practices"] = recommendation["complementary_practices"]
         copy["complementary_practices_heading"] = recommendation["complementary_practices_heading"]
         copy["infrastructure_note"] = recommendation.get("infrastructure_note")
+        copy["prioritized_actions"] = recommendation.get("prioritized_actions", [])
+        copy["selected_user_profile"] = recommendation_engine.normalize_target_user(target_user)
         enriched.append(copy)
     return enriched
 
@@ -144,6 +255,27 @@ def summarize_results(results, source_type=None):
     return summary
 
 
+def summarize_pdf_results(raw_results, logical_results, source_type=None):
+    raw_summary = summarize_results(raw_results, source_type=source_type)
+    visible_networks = {
+        item.get("ssid")
+        for item in logical_results
+        if not item.get("hidden_ssid") and item.get("ssid")
+    }
+    hidden_observations = sum(1 for item in raw_results if item.get("hidden_ssid"))
+    attention = sum(
+        1 for item in logical_results
+        if item.get("classification") in {"ALTO", "CRITICO", "CRÍTICO"}
+        or item.get("evaluation_status") != "COMPLETE"
+    )
+    raw_summary.update({
+        "identifiable_networks": len(visible_networks),
+        "hidden_observations": hidden_observations,
+        "attention_required": attention,
+    })
+    return raw_summary
+
+
 def anonymize_results(results):
     ssid_map = {}
     bssid_map = {}
@@ -153,15 +285,167 @@ def anonymize_results(results):
         copy = deepcopy(item)
         ssid = copy.get("ssid")
         bssid = copy.get("bssid")
-        if ssid not in ssid_map:
-            ssid_map[ssid] = f"SSID-{len(ssid_map) + 1:03d}"
+        if copy.get("hidden_ssid"):
+            copy["ssid"] = ssid
+        else:
+            if ssid not in ssid_map:
+                ssid_map[ssid] = f"SSID-{len(ssid_map) + 1:03d}"
+            copy["ssid"] = ssid_map[ssid]
         if bssid not in bssid_map:
             bssid_map[bssid] = f"BSSID-{len(bssid_map) + 1:03d}"
-        copy["ssid"] = ssid_map[ssid]
         copy["bssid"] = bssid_map[bssid]
         anonymized.append(copy)
 
     return anonymized
+
+
+CLASSIFICATION_RANK = {
+    "NO_EVALUABLE": 0,
+    "BAJO": 1,
+    "MEDIO": 2,
+    "ALTO": 3,
+    "CRITICO": 4,
+    "CRÍTICO": 4,
+}
+
+DISPLAY_LABELS = {
+    "LOW": "Bajo",
+    "MEDIUM": "Medio",
+    "HIGH": "Alto",
+    "UNKNOWN": "Desconocido",
+    "NO_COST": "Sin costo",
+    "SHORT_TERM": "Corto plazo",
+    "IMMEDIATE": "Inmediato",
+    "PLANNED": "Planificado",
+    "COMPLETE": "Evaluación completa",
+    "INCOMPLETE": "Evaluación incompleta",
+    "SINGLE_BSSID": "Un solo punto de acceso observado",
+    "MULTI_RADIO_OBSERVED": "Varias radios observadas",
+    "MULTI_AP_OBSERVED": "Varios puntos de acceso observados",
+    "SECURITY_PROFILE_MISMATCH": "Configuraciones diferentes bajo el mismo SSID",
+    "HIDDEN_SSID": "SSID oculto observado individualmente",
+    "ALIGNED": "Alineado",
+    "DEVIANT": "Desviado",
+    "PARTIAL": "Parcial",
+    "NETWORK_OWNER": "Propietario o administrador de la red.",
+    "NETWORK_USER": "Persona que desea conectarse.",
+    "GENERAL": "Perfil no especificado.",
+    "PROVISIONAL": "Provisional",
+    "PRIMARY": "Acción principal recomendada",
+    "ALTERNATIVE": "Alternativa inmediata",
+    "DEFINITIVE": "Solución definitiva",
+    "COMPLEMENTARY": "Complementaria",
+    "CRITICO": "Crítico",
+    "CRÍTICO": "Crítico",
+    "BAJO": "Bajo",
+    "MEDIO": "Medio",
+    "ALTO": "Alto",
+    "NO_EVALUABLE": "No evaluable",
+}
+
+
+def display_label(value):
+    return DISPLAY_LABELS.get(value, value if value is not None else "s/d")
+
+
+def format_display_datetime(value):
+    if not value:
+        return "s/d"
+    if isinstance(value, datetime):
+        date = value
+    else:
+        try:
+            date = datetime.fromisoformat(str(value))
+        except ValueError:
+            return str(value)
+    return date.strftime("%d/%m/%Y %H:%M")
+
+
+def split_wss_vector(vector):
+    components = {"schema_version": None}
+    if not vector:
+        return components
+    for part in str(vector).split("/"):
+        if ":" not in part:
+            continue
+        key, value = part.split(":", 1)
+        key = key.strip().upper()
+        value = value.strip()
+        if key == "WSS":
+            components["schema_version"] = value
+        else:
+            components[key] = value
+    return components
+
+
+def _logical_group_key(item):
+    if item.get("hidden_ssid"):
+        return f"HIDDEN::{item.get('bssid') or item.get('ssid')}"
+    return item.get("ssid") or item.get("bssid")
+
+
+def _best_representative(items):
+    def sort_key(item):
+        classification = item.get("classification") or "NO_EVALUABLE"
+        score = item.get("wss_score")
+        return (
+            CLASSIFICATION_RANK.get(classification, 0),
+            -1 if score is None else float(score),
+        )
+
+    return sorted(items, key=sort_key, reverse=True)[0]
+
+
+def group_logical_networks(results):
+    grouped = {}
+    for item in results:
+        grouped.setdefault(_logical_group_key(item), []).append(item)
+
+    logical = []
+    for items in grouped.values():
+        representative = deepcopy(_best_representative(items))
+        radios = []
+        bands = set()
+        security_profiles = set()
+        for item in items:
+            radios.append({
+                "bssid": item.get("bssid"),
+                "band": item.get("band"),
+                "channel": item.get("channel"),
+                "signal_pct": item.get("signal_pct"),
+                "radio_type": item.get("radio_type"),
+                "auth_raw": item.get("auth_raw"),
+                "auth_key": item.get("auth_key"),
+                "cipher_raw": item.get("cipher_raw"),
+                "cipher_key": item.get("cipher_key"),
+                "mfp_required": item.get("mfp_required"),
+            })
+            if item.get("band"):
+                bands.add(item.get("band"))
+            security_profiles.add((item.get("auth_key"), item.get("cipher_key")))
+
+        if representative.get("hidden_ssid"):
+            observation_status = "HIDDEN_SSID"
+        elif len(security_profiles) > 1:
+            observation_status = "SECURITY_PROFILE_MISMATCH"
+        elif len(items) > 1 and len(bands) > 1:
+            observation_status = "MULTI_RADIO_OBSERVED"
+        elif len(items) > 1:
+            observation_status = "MULTI_AP_OBSERVED"
+        else:
+            observation_status = representative.get("observation_status") or "SINGLE_BSSID"
+
+        representative["logical_radios"] = radios
+        representative["logical_bssid_count"] = len(radios)
+        representative["observed_bands"] = sorted(bands)
+        representative["observation_status"] = observation_status
+        representative["infrastructure_note"] = (
+            representative.get("infrastructure_note")
+            or display_label(observation_status)
+        )
+        logical.append(representative)
+
+    return logical
 
 
 def normalize_result_for_report(result):
@@ -193,6 +477,8 @@ def normalize_result_for_report(result):
         "complementary_practices": result.get("complementary_practices", []),
         "complementary_practices_heading": result.get("complementary_practices_heading"),
         "infrastructure_note": result.get("infrastructure_note"),
+        "prioritized_actions": result.get("prioritized_actions", []),
+        "selected_user_profile": result.get("selected_user_profile"),
         "observation_status": result.get("observation_status"),
         "observation_message": result.get("observation_message"),
         "requires_technical_review": result.get("requires_technical_review"),
@@ -211,16 +497,29 @@ def normalize_result_for_report(result):
         output["wss_score"] = result.get("wss_score")
         output["classification"] = result.get("classification")
         output["wss_vector"] = result.get("wss_vector")
+        output["au"] = result.get("au")
+        output["en"] = result.get("en")
+        output["ex"] = result.get("ex")
+        output["an"] = result.get("an")
+        output["bm"] = result.get("bm")
+        output["bm_label"] = result.get("bm_label")
     else:
         output["wss_score"] = None
         output["classification"] = "NO_EVALUABLE"
+        output["au"] = result.get("au")
+        output["en"] = result.get("en")
+        output["ex"] = result.get("ex")
+        output["an"] = result.get("an")
+        output["bm"] = result.get("bm")
+        output["bm_label"] = result.get("bm_label")
     return output
 
 
-def build_report(results, metadata, anonymize=False):
+def build_report(results, metadata, anonymize=False, user_profile=DEFAULT_USER_PROFILE, organization=None):
     report_results = anonymize_results(results) if anonymize else deepcopy(results)
     generated_at = datetime.now().isoformat()
     source_type = metadata.get("source_type")
+    user_profile = recommendation_engine.normalize_target_user(user_profile)
 
     return {
         "report_metadata": {
@@ -233,13 +532,269 @@ def build_report(results, metadata, anonymize=False):
             "synthetic_data": bool(metadata.get("synthetic_data")),
             "model_status": MODEL_STATUS,
             "anonymized": bool(anonymize),
+            "organization": organization or None,
+            "selected_user_profile": user_profile,
         },
         "scope": {
             "description": "Evaluacion de parametros Wi-Fi observables",
             "not_an_integral_security_audit": True,
+            "text": SCOPE_TEXT,
         },
         "summary": summarize_results(results, source_type=source_type),
         "results": [normalize_result_for_report(item) for item in report_results],
+    }
+
+
+def visible_actions(actions):
+    allowed = {"PRIMARY", "ALTERNATIVE", "DEFINITIVE"}
+    return [item for item in sorted(actions or [], key=lambda action: action["display_order"])
+            if item["action_type"] in allowed][:3]
+
+
+def _pdf_text(value):
+    if value is None:
+        return "s/d"
+    text = str(value)
+    return (
+        text.replace("→", "->")
+        .replace("—", "-")
+        .replace("–", "-")
+        .replace("“", '"')
+        .replace("”", '"')
+        .replace("’", "'")
+    )
+
+
+class WssPdf(FPDF):
+    def footer(self):
+        self.set_y(-14)
+        self.set_font("Helvetica", "", 8)
+        self.set_text_color(90, 98, 110)
+        self.cell(0, 8, f"Página {self.page_no()}", align="C")
+
+
+def _add_pdf_line(pdf, label, value, width=0):
+    _ensure_pdf_space(pdf, 10)
+    line = f"{_pdf_text(label)}: {_pdf_text(value)}"
+    if hasattr(pdf, "visible_text"):
+        pdf.visible_text.append(line)
+    pdf.set_font("Helvetica", "B", 9)
+    text = f"{_pdf_text(label)}: "
+    pdf.set_font("Helvetica", "", 9)
+    pdf.multi_cell(width or 0, 5, text + _pdf_text(value))
+
+
+def _ensure_pdf_space(pdf, height):
+    if pdf.get_y() + height > pdf.page_break_trigger:
+        pdf.add_page()
+
+
+def _pdf_section(pdf, title, visible_text):
+    _ensure_pdf_space(pdf, 14)
+    pdf.set_font("Helvetica", "B", 12)
+    pdf.set_fill_color(238, 242, 246)
+    pdf.cell(0, 7, _pdf_text(title), ln=1, fill=True)
+    visible_text.append(title)
+
+
+def _pdf_badge(pdf, label, color):
+    pdf.set_fill_color(*color)
+    pdf.set_text_color(20, 24, 30)
+    pdf.set_font("Helvetica", "B", 9)
+    pdf.cell(35, 7, _pdf_text(label), ln=0, align="C", fill=True)
+    pdf.set_text_color(20, 24, 30)
+
+
+def _classification_color(classification):
+    colors = {
+        "BAJO": (111, 227, 166),
+        "MEDIO": (242, 196, 92),
+        "ALTO": (255, 145, 86),
+        "CRITICO": (255, 86, 64),
+        "CRÍTICO": (255, 86, 64),
+        "NO_EVALUABLE": (155, 167, 180),
+    }
+    return colors.get(classification, colors["NO_EVALUABLE"])
+
+
+def _visible_action_meta(action):
+    return (
+        f"Esfuerzo: {display_label(action.get('effort_level'))}; "
+        f"Beneficio: {display_label(action.get('benefit_level'))}; "
+        f"Costo: {display_label(action.get('cost_level'))}; "
+        f"Plazo: {display_label(action.get('time_horizon'))}"
+    )
+
+
+def build_pdf_report(results, metadata, anonymize=False, user_profile=DEFAULT_USER_PROFILE,
+                     organization=None):
+    if not results or not metadata:
+        return {"ok": False, "error": "No hay resultados para exportar."}
+
+    report = build_report(
+        results,
+        metadata,
+        anonymize=bool(anonymize),
+        user_profile=user_profile,
+        organization=organization,
+    )
+    pdf = WssPdf(format="A4")
+    pdf.set_auto_page_break(auto=True, margin=16)
+    pdf.set_margins(16, 16, 16)
+    pdf.add_page()
+
+    meta = report["report_metadata"]
+    logical_results = group_logical_networks(report["results"])
+    pdf_summary = summarize_pdf_results(report["results"], logical_results, source_type=meta["source_type"])
+    source_labels = {
+        SOURCE_LIVE_SCAN: "escaneo real",
+        SOURCE_FILE_IMPORT: "archivo TXT",
+        SOURCE_DEMO: "demostración",
+    }
+    visible_text = []
+    pdf.visible_text = visible_text
+
+    pdf.set_font("Helvetica", "B", 18)
+    pdf.set_text_color(20, 24, 30)
+    pdf.multi_cell(0, 8, "WSS Framework")
+    pdf.set_font("Helvetica", "", 12)
+    pdf.multi_cell(
+        0,
+        6,
+        "Sistema automatizado de evaluación de seguridad Wi-Fi",
+    )
+    pdf.ln(4)
+    _add_pdf_line(pdf, "Organización evaluada", organization or "No informada")
+    _add_pdf_line(pdf, "Fecha y hora", format_display_datetime(datetime.now()))
+    _add_pdf_line(pdf, "Tipo de origen", source_labels.get(meta["source_type"], meta["source_type"]))
+    _add_pdf_line(pdf, "Datos sintéticos", "Sí" if meta["synthetic_data"] else "No")
+    _add_pdf_line(pdf, "Versión del motor", meta["engine_version"])
+    _add_pdf_line(pdf, "Estado del modelo", display_label(MODEL_STATUS))
+    _add_pdf_line(pdf, "Anonimización aplicada", "Sí" if meta["anonymized"] else "No")
+    _add_pdf_line(pdf, "Perfil de recomendación", display_label(meta["selected_user_profile"]))
+    visible_text.extend([
+        "WSS Framework",
+        organization or "No informada",
+        display_label(meta["selected_user_profile"]),
+    ])
+
+    pdf.ln(4)
+    _pdf_section(pdf, "Resumen ejecutivo", visible_text)
+    pdf.set_font("Helvetica", "", 9)
+    pdf.multi_cell(0, 5, _pdf_text(SCOPE_TEXT))
+    summary_lines = [
+        f"Registros evaluados: {pdf_summary['total_results']}",
+        f"Redes con SSID identificable: {pdf_summary['identifiable_networks']}",
+        f"Observaciones de SSID oculto: {pdf_summary['hidden_observations']}",
+        f"Evaluaciones completas: {pdf_summary['complete_evaluations']}",
+        f"Evaluaciones incompletas: {pdf_summary['incomplete_evaluations']}",
+        f"Redes o registros que requieren atención: {pdf_summary['attention_required']}",
+        "Distribución: " + ", ".join(
+            f"{display_label(key)}: {value}" for key, value in sorted(pdf_summary["by_classification"].items())
+        ),
+    ]
+    for line in summary_lines:
+        pdf.multi_cell(0, 5, _pdf_text(line))
+        visible_text.append(line)
+
+    practices = []
+    for index, item in enumerate(logical_results, start=1):
+        _ensure_pdf_space(pdf, 106)
+        pdf.ln(4)
+        pdf.set_font("Helvetica", "B", 13)
+        pdf.set_fill_color(248, 250, 252)
+        pdf.cell(0, 8, _pdf_text(f"Resultado por red {index}: {item.get('ssid')}"), ln=1, fill=True)
+        visible_text.append(f"Resultado por red {index}: {item.get('ssid')}")
+        classification = item.get("classification") or "NO_EVALUABLE"
+        score_text = "Sin puntaje" if item.get("wss_score") is None else str(item.get("wss_score")).replace(".", ",")
+        pdf.set_font("Helvetica", "B", 20)
+        pdf.cell(30, 10, _pdf_text(score_text), ln=0)
+        _pdf_badge(pdf, display_label(classification), _classification_color(classification))
+        pdf.ln(12)
+        _add_pdf_line(pdf, "Estado sencillo", item.get("simple_status"))
+        _add_pdf_line(pdf, "Clasificación", display_label(classification))
+        _add_pdf_line(pdf, "Hallazgo", item.get("finding_title"))
+        _add_pdf_line(pdf, "Acción principal", item.get("recommended_action"))
+        _add_pdf_line(pdf, "Perfil de recomendación", display_label(item.get("selected_user_profile")))
+        visible_text.extend([score_text, display_label(classification), item.get("simple_status") or ""])
+
+        actions = visible_actions(item.get("prioritized_actions", []))
+        if actions:
+            primary = actions[0]
+            _add_pdf_line(pdf, "Esfuerzo / beneficio / costo / plazo", _visible_action_meta(primary))
+            visible_text.append(_visible_action_meta(primary))
+            if len(actions) > 1:
+                _add_pdf_line(
+                    pdf,
+                    "Alternativas",
+                    "; ".join(action["title"] for action in actions[1:]),
+                )
+
+        _add_pdf_line(pdf, "Limitaciones", item.get("limitations"))
+        _add_pdf_line(pdf, "Observación sobre radios o AP", display_label(item.get("observation_status")))
+        _add_pdf_line(pdf, "Regla aplicada", item.get("recommendation_rule_id"))
+
+        _pdf_section(pdf, "Detalles técnicos", visible_text)
+        vector = split_wss_vector(item.get("wss_vector"))
+        technical_rows = [
+            ("Autenticación", f"{item.get('auth_raw')} ({item.get('auth_key')})"),
+            ("Cifrado", f"{item.get('cipher_raw')} ({item.get('cipher_key')})"),
+            ("Versión del esquema WSS", vector.get("schema_version")),
+            ("AU / EN / EX / AN / BM", (
+                f"{item.get('au')} / {item.get('en')} / {item.get('ex')} / "
+                f"{item.get('an')} / {display_label(item.get('bm_label') or item.get('bm'))}"
+            )),
+        ]
+        for label, value in technical_rows:
+            _add_pdf_line(pdf, label, value)
+
+        _ensure_pdf_space(pdf, 10 + (len(item.get("logical_radios", [])) * 6))
+        pdf.set_font("Helvetica", "B", 9)
+        pdf.cell(0, 6, "Radios o puntos de acceso", ln=1)
+        pdf.set_font("Helvetica", "", 8)
+        for radio in item.get("logical_radios", []):
+            row = (
+                f"BSSID: {radio.get('bssid')} | Señal: {radio.get('signal_pct') or 's/d'} | "
+                f"Banda: {radio.get('band') or 's/d'} | Canal: {radio.get('channel') or 's/d'} | "
+                f"Radio: {radio.get('radio_type') or 's/d'} | MFP: {radio.get('mfp_required') or 's/d'}"
+            )
+            pdf.multi_cell(0, 5, _pdf_text(row))
+            visible_text.append(row)
+
+        _ensure_pdf_space(pdf, 62)
+        _pdf_section(pdf, "Trazabilidad", visible_text)
+        trace_rows = [
+            ("Origen", meta.get("source_label")),
+            ("Archivo", meta.get("source_filename")),
+            ("Versión del motor", meta.get("engine_version")),
+            ("Regla y versión", f"{item.get('recommendation_rule_id')} / {item.get('recommendation_rule_version')}"),
+            ("Estado de evaluación", display_label(item.get("evaluation_status"))),
+            ("Estado de infraestructura", display_label(item.get("observation_status"))),
+            ("Fecha de procesamiento", format_display_datetime(item.get("processed_at"))),
+            ("Anonimización aplicada", "Sí" if meta["anonymized"] else "No"),
+        ]
+        for label, value in trace_rows:
+            _add_pdf_line(pdf, label, value)
+            visible_text.append(f"{label}: {value}")
+        practices.extend(item.get("complementary_practices", []))
+
+    if practices:
+        _pdf_section(pdf, "Buenas prácticas complementarias", visible_text)
+        pdf.set_font("Helvetica", "", 9)
+        for practice in sorted(set(practices)):
+            pdf.multi_cell(0, 5, _pdf_text(f"- {practice}"))
+            visible_text.append(practice)
+
+    page_count = pdf.page_no()
+    raw_output = pdf.output(dest="S")
+    pdf_bytes = raw_output.encode("latin-1") if isinstance(raw_output, str) else bytes(raw_output)
+    return {
+        "ok": True,
+        "pdf_bytes": pdf_bytes,
+        "report": report,
+        "logical_network_count": len(logical_results),
+        "page_count": page_count,
+        "visible_text": "\n".join(_pdf_text(text) for text in visible_text if text),
     }
 
 
@@ -252,12 +807,28 @@ class WssApi:
     def __init__(self):
         self.last_results = []
         self.last_metadata = None
+        self.selected_user_profile = DEFAULT_USER_PROFILE
 
     def _store(self, response):
         if response.get("ok"):
             self.last_results = response.get("results", [])
             self.last_metadata = response.get("metadata")
         return response
+
+    def update_recommendation_profile(self, target_user=DEFAULT_USER_PROFILE):
+        if not self.last_results or not self.last_metadata:
+            return {"ok": False, "error": "No hay resultados para actualizar."}
+        self.selected_user_profile = recommendation_engine.normalize_target_user(target_user)
+        self.last_results = apply_recommendations(
+            self.last_results,
+            target_user=self.selected_user_profile,
+        )
+        return {
+            "ok": True,
+            "results": self.last_results,
+            "metadata": self.last_metadata,
+            "selected_user_profile": self.selected_user_profile,
+        }
 
     def scan_networks(self):
         try:
@@ -266,7 +837,8 @@ class WssApi:
                 source_label="Escaneo real del equipo evaluador",
                 synthetic_data=False,
             )
-            results = apply_recommendations(results)
+            results = assign_hidden_ssid_identifiers(results)
+            results = apply_recommendations(results, target_user=self.selected_user_profile)
             metadata = {
                 "source_type": SOURCE_LIVE_SCAN,
                 "source_label": "Escaneo real del equipo evaluador",
@@ -282,7 +854,11 @@ class WssApi:
             return {"ok": False, "demo": False, "error": "Error inesperado durante el escaneo."}
 
     def scan_networks_demo(self):
-        results = apply_recommendations(wss_engine.evaluate_networks_demo())
+        results = assign_hidden_ssid_identifiers(wss_engine.evaluate_networks_demo())
+        results = apply_recommendations(
+            results,
+            target_user=self.selected_user_profile,
+        )
         metadata = {
             "source_type": SOURCE_DEMO,
             "source_label": "Datos sinteticos de demostracion",
@@ -316,6 +892,7 @@ class WssApi:
             source_label="Archivo TXT cargado por el usuario",
             source_filename=read_result["filename"],
             synthetic_data=False,
+            target_user=self.selected_user_profile,
         )
         if response.get("ok"):
             response["source_filename"] = read_result["filename"]
@@ -328,22 +905,104 @@ class WssApi:
             "scan_available": platform.system() == "Windows",
         }
 
-    def export_json(self, anonymize=False):
+    def _resolve_export_path(self, file_type, anonymize=False, selected_path=None):
+        extension = ".pdf" if file_type == "PDF" else ".json"
+        if selected_path is not None:
+            if not selected_path:
+                return {"ok": False, "cancelled": True}
+            return {"ok": True, "path": ensure_extension(selected_path, extension)}
+        return choose_save_path(file_type, anonymize=bool(anonymize))
+
+    def export_json(self, anonymize=False, selected_path=None):
         if not self.last_results or not self.last_metadata:
             return {"ok": False, "error": "No hay resultados para exportar."}
 
-        report = build_report(self.last_results, self.last_metadata, anonymize=bool(anonymize))
-        ts = datetime.now().strftime("%Y%m%d-%H%M%S")
-        suffix = "_anon" if anonymize else ""
-        filename = f"wss_report_{ts}{suffix}.json"
+        path_result = self._resolve_export_path("JSON", anonymize=anonymize, selected_path=selected_path)
+        if not path_result.get("ok"):
+            if path_result.get("cancelled"):
+                return {"ok": False, "cancelled": True, "message": "La exportación fue cancelada."}
+            return path_result
 
+        report = build_report(
+            self.last_results,
+            self.last_metadata,
+            anonymize=bool(anonymize),
+            user_profile=self.selected_user_profile,
+        )
+        generated_at = datetime.now().isoformat()
+        write_result = write_json_report(path_result["path"], report)
+        if not write_result.get("ok"):
+            return write_result
+
+        return export_success_response(
+            write_result["path"],
+            "JSON",
+            anonymize=anonymize,
+            generated_at=generated_at,
+            report=report,
+        )
+
+    def export_pdf(self, anonymize=False, organization=None, selected_path=None):
+        if not self.last_results or not self.last_metadata:
+            return {"ok": False, "error": "No hay resultados para exportar."}
+
+        path_result = self._resolve_export_path("PDF", anonymize=anonymize, selected_path=selected_path)
+        if not path_result.get("ok"):
+            if path_result.get("cancelled"):
+                return {"ok": False, "cancelled": True, "message": "La exportación fue cancelada."}
+            return path_result
+
+        built = build_pdf_report(
+            self.last_results,
+            self.last_metadata,
+            anonymize=bool(anonymize),
+            user_profile=self.selected_user_profile,
+            organization=organization,
+        )
+        if not built.get("ok"):
+            return built
+
+        generated_at = datetime.now().isoformat()
+        write_result = write_pdf_report(path_result["path"], built["pdf_bytes"])
+        if not write_result.get("ok"):
+            return write_result
+
+        return export_success_response(
+            write_result["path"],
+            "PDF",
+            anonymize=anonymize,
+            generated_at=generated_at,
+            report=built["report"],
+        ) | {
+            "logical_network_count": built.get("logical_network_count"),
+            "page_count": built.get("page_count"),
+        }
+
+    def open_exported_file(self, saved_path):
+        file_path = Path(saved_path)
+        if not file_path.exists() or not file_path.is_file():
+            return {"ok": False, "error": "El archivo indicado no existe."}
         try:
-            with open(filename, "w", encoding="utf-8") as f:
-                json.dump(report, f, indent=2, ensure_ascii=False)
+            if platform.system() == "Windows":
+                os.startfile(str(file_path.resolve()))  # noqa: S606 - ruta validada como archivo existente.
+            else:
+                return {"ok": False, "error": "Apertura automatica no disponible en este sistema."}
         except OSError as e:
-            return {"ok": False, "error": f"No se pudo guardar el archivo: {e}"}
+            return {"ok": False, "error": f"No se pudo abrir el archivo: {e}"}
+        return {"ok": True}
 
-        return {"ok": True, "filename": filename, "report": report}
+    def show_exported_file_in_folder(self, saved_path):
+        file_path = Path(saved_path)
+        if not file_path.exists() or not file_path.is_file():
+            return {"ok": False, "error": "El archivo indicado no existe."}
+        try:
+            if platform.system() == "Windows":
+                subprocess.Popen(["explorer", "/select,", str(file_path.resolve())])
+            else:
+                return {"ok": False, "error": "Mostrar en carpeta no esta disponible en este sistema."}
+        except OSError as e:
+            return {"ok": False, "error": f"No se pudo abrir la carpeta: {e}"}
+        return {"ok": True}
 
 
 def main():
