@@ -34,6 +34,8 @@ def test_incomplete_result_serializes_json_null():
     encoded = json.dumps(report)
     assert '"wss_score": null' in encoded
     assert report["results"][0]["classification"] == "NO_EVALUABLE"
+    assert response["metadata"]["source_label"] == "Archivo de prueba con parámetros desconocidos"
+    assert response["results"][0]["source_label"] == "Archivo de prueba con parámetros desconocidos"
 
 
 def test_summary_counts_complete_and_incomplete():

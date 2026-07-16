@@ -15,6 +15,7 @@ except ImportError:  # Permite probar la logica sin abrir ni instalar la GUI.
     webview = None
 
 import wss_engine
+import recommendation_engine
 
 
 SOURCE_LIVE_SCAN = "LIVE_SCAN"
@@ -22,6 +23,16 @@ SOURCE_FILE_IMPORT = "FILE_IMPORT"
 SOURCE_DEMO = "DEMO"
 MODEL_STATUS = "PROVISIONAL"
 REPORT_VERSION = "2.0"
+
+RECOMMENDATION_FIELDS = (
+    "recommendation_rule_id",
+    "recommendation_rule_version",
+    "simple_status",
+    "finding_title",
+    "recommended_action",
+    "priority",
+    "limitations",
+)
 
 
 def read_netsh_text_file(path):
@@ -59,6 +70,9 @@ def read_netsh_text_file(path):
 
 
 def process_raw_output(raw_output, source_type, source_label, source_filename=None, synthetic_data=False):
+    if source_filename == "es_unknown.txt":
+        source_label = "Archivo de prueba con parámetros desconocidos"
+
     results = wss_engine.evaluate_networks(
         raw_output=raw_output,
         source_type=source_type,
@@ -66,6 +80,7 @@ def process_raw_output(raw_output, source_type, source_label, source_filename=No
         source_filename=source_filename,
         synthetic_data=synthetic_data,
     )
+    results = apply_recommendations(results)
     if not results:
         return {
             "ok": False,
@@ -81,6 +96,29 @@ def process_raw_output(raw_output, source_type, source_label, source_filename=No
         "engine_version": wss_engine.ENGINE_VERSION,
     }
     return {"ok": True, "results": results, "metadata": metadata}
+
+
+def apply_recommendations(results):
+    enriched = []
+    for item in results:
+        copy = deepcopy(item)
+        recommendation = recommendation_engine.recommend_for_result(copy)
+        copy["recommendation"] = recommendation
+        copy["recommendation_rule_id"] = recommendation["rule_id"]
+        copy["recommendation_rule_version"] = recommendation["rule_version"]
+        copy["simple_status"] = recommendation["simple_status"]
+        copy["finding_title"] = recommendation["finding_title"]
+        copy["recommended_action"] = recommendation["recommended_action"]
+        copy["priority"] = recommendation["priority"]
+        copy["limitations"] = recommendation["limitations"]
+        copy["technical_interpretation"] = recommendation["technical_interpretation"]
+        copy["simple_explanation"] = recommendation["simple_explanation"]
+        copy["warning"] = recommendation["warning"]
+        copy["complementary_practices"] = recommendation["complementary_practices"]
+        copy["complementary_practices_heading"] = recommendation["complementary_practices_heading"]
+        copy["infrastructure_note"] = recommendation.get("infrastructure_note")
+        enriched.append(copy)
+    return enriched
 
 
 def summarize_results(results, source_type=None):
@@ -142,6 +180,19 @@ def normalize_result_for_report(result):
         "evaluation_status": result.get("evaluation_status"),
         "unknown_fields": result.get("unknown_fields", []),
         "recommendation_rule": result.get("recommendation_rule"),
+        "recommendation_rule_id": result.get("recommendation_rule_id"),
+        "recommendation_rule_version": result.get("recommendation_rule_version"),
+        "simple_status": result.get("simple_status"),
+        "finding_title": result.get("finding_title"),
+        "recommended_action": result.get("recommended_action"),
+        "priority": result.get("priority"),
+        "limitations": result.get("limitations"),
+        "technical_interpretation": result.get("technical_interpretation"),
+        "simple_explanation": result.get("simple_explanation"),
+        "warning": result.get("warning"),
+        "complementary_practices": result.get("complementary_practices", []),
+        "complementary_practices_heading": result.get("complementary_practices_heading"),
+        "infrastructure_note": result.get("infrastructure_note"),
         "observation_status": result.get("observation_status"),
         "observation_message": result.get("observation_message"),
         "requires_technical_review": result.get("requires_technical_review"),
@@ -215,6 +266,7 @@ class WssApi:
                 source_label="Escaneo real del equipo evaluador",
                 synthetic_data=False,
             )
+            results = apply_recommendations(results)
             metadata = {
                 "source_type": SOURCE_LIVE_SCAN,
                 "source_label": "Escaneo real del equipo evaluador",
@@ -230,7 +282,7 @@ class WssApi:
             return {"ok": False, "demo": False, "error": "Error inesperado durante el escaneo."}
 
     def scan_networks_demo(self):
-        results = wss_engine.evaluate_networks_demo()
+        results = apply_recommendations(wss_engine.evaluate_networks_demo())
         metadata = {
             "source_type": SOURCE_DEMO,
             "source_label": "Datos sinteticos de demostracion",

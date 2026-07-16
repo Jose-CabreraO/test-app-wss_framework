@@ -865,6 +865,13 @@
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
     gap: 14px;
+    align-content: start;
+  }
+  .real-results-layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(480px, 520px);
+    gap: 18px;
+    align-items: start;
   }
 
   .net-card {
@@ -872,9 +879,10 @@
     border: 1px solid var(--line);
     border-radius: 14px;
     padding: 20px;
-    cursor: pointer;
+    cursor: default;
     transition: border-color 0.15s ease, transform 0.15s ease;
     position: relative;
+    min-height: 320px;
   }
   .net-card:hover { border-color: var(--text-faint); transform: translateY(-2px); }
   .net-card.selected { border-color: var(--severity-low); }
@@ -888,23 +896,26 @@
   }
   .net-card-ssid {
     font-family: var(--font-mono);
-    font-size: 14px;
+    font-size: 18px;
     font-weight: 600;
     word-break: break-word;
+    line-height: 1.45;
   }
   .net-card-score {
     font-family: var(--font-display);
-    font-size: 22px;
+    font-size: 15.5px;
     font-weight: 700;
     flex-shrink: 0;
+    line-height: 1.45;
   }
   .net-card-meta {
-    font-size: 12px;
-    color: var(--text-faint);
+    font-size: 15px;
+    color: var(--text-dim);
     display: flex;
     flex-wrap: wrap;
     gap: 10px;
     margin-bottom: 12px;
+    line-height: 1.55;
   }
   .net-card-badge {
     display: inline-block;
@@ -915,28 +926,197 @@
     padding: 4px 10px;
     border-radius: 100px;
   }
+  .technical-toggle {
+    margin-top: 2px;
+    border: 1px solid rgba(111, 227, 166, 0.35);
+    background: rgba(111, 227, 166, 0.08);
+    color: var(--severity-low);
+    cursor: pointer;
+    font-size: 14.5px;
+    padding: 9px 14px;
+    text-transform: none;
+    letter-spacing: 0;
+    border-radius: 8px;
+  }
+  .technical-toggle:hover {
+    border-color: rgba(111, 227, 166, 0.7);
+    background: rgba(111, 227, 166, 0.14);
+  }
+  .technical-toggle:focus-visible {
+    outline: 2px solid var(--severity-low);
+    outline-offset: 3px;
+  }
   .net-card-observation {
     margin-top: 10px;
-    font-size: 11.5px;
+    font-size: 14px;
     color: var(--text-dim);
     display: flex;
     align-items: center;
     gap: 6px;
-    font-family: var(--font-mono);
+    line-height: 1.5;
   }
 
   .detail-panel {
-    margin-top: 28px;
+    position: fixed;
+    top: 72px;
+    right: 0;
+    bottom: 0;
+    width: min(580px, 94vw);
+    max-height: none;
+    overflow: hidden;
     background: var(--bg-panel);
-    border: 1px solid var(--line);
-    border-radius: 18px;
-    padding: 32px;
+    border-left: 1px solid var(--line-strong);
+    border-radius: 0;
+    box-shadow: -24px 0 60px rgba(0,0,0,0.35);
+    padding: 0;
+    z-index: 60;
   }
   .detail-panel-empty {
     color: var(--text-faint);
     font-size: 13.5px;
     text-align: center;
     padding: 20px 0;
+  }
+  .detail-close {
+    border: 1px solid var(--line-strong);
+    background: rgba(255,255,255,0.04);
+    color: var(--text);
+    border-radius: 8px;
+    padding: 8px 12px;
+    cursor: pointer;
+    font-size: 13px;
+  }
+  .detail-close:hover { border-color: var(--text-faint); }
+  .detail-close:focus-visible {
+    outline: 2px solid var(--severity-low);
+    outline-offset: 3px;
+  }
+  .detail-section {
+    margin-top: 18px;
+    padding-top: 16px;
+    border-top: 1px solid var(--line);
+  }
+  .detail-drawer-header {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    background: var(--bg-panel);
+    border-bottom: 1px solid var(--line);
+    padding: 18px 20px;
+  }
+  .detail-drawer-title {
+    font-family: var(--font-display);
+    font-size: 21px;
+    font-weight: 700;
+    line-height: 1.35;
+    word-break: break-word;
+  }
+  .detail-drawer-meta {
+    color: var(--text-dim);
+    font-size: 15px;
+    line-height: 1.45;
+    margin-top: 5px;
+  }
+  .detail-score-main {
+    font-family: var(--font-display);
+    font-size: 44px;
+    font-weight: 700;
+    line-height: 1;
+    color: var(--severity-low);
+    margin-top: 12px;
+  }
+  .detail-classification {
+    margin-top: 8px;
+    font-size: 15px;
+    line-height: 1.45;
+    color: var(--text);
+  }
+  .detail-simple-status {
+    margin-top: 4px;
+    font-size: 15px;
+    line-height: 1.45;
+    color: var(--text-dim);
+  }
+  .detail-drawer-body {
+    height: calc(100vh - 72px - 96px);
+    overflow-y: auto;
+    padding: 16px 20px 24px;
+  }
+  .detail-tabs {
+    display: flex;
+    gap: 8px;
+    border-bottom: 1px solid var(--line);
+    margin-bottom: 14px;
+    padding-bottom: 10px;
+  }
+  .detail-tab {
+    border: 1px solid var(--line);
+    background: rgba(255,255,255,0.03);
+    color: var(--text-dim);
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 14px;
+    padding: 7px 10px;
+  }
+  .detail-tab[aria-selected="true"] {
+    color: var(--severity-low);
+    border-color: rgba(111, 227, 166, 0.55);
+    background: rgba(111, 227, 166, 0.1);
+  }
+  .detail-tab:focus-visible {
+    outline: 2px solid var(--severity-low);
+    outline-offset: 3px;
+  }
+  .detail-tab-panel[hidden] { display: none; }
+  .detail-kv {
+    display: grid;
+    grid-template-columns: minmax(130px, 0.42fr) minmax(0, 1fr);
+    gap: 8px 12px;
+    align-items: start;
+  }
+  .detail-kv dt {
+    color: var(--text-dim);
+    font-size: 14px;
+    line-height: 1.45;
+  }
+  .detail-kv dd {
+    color: var(--text);
+    font-size: 14.5px;
+    line-height: 1.45;
+    margin: 0;
+    word-break: break-word;
+  }
+  .radio-card {
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 12px;
+    margin-top: 10px;
+    background: rgba(255,255,255,0.025);
+  }
+  .detail-section-title {
+    font-family: var(--font-display);
+    font-size: 17px;
+    font-weight: 700;
+    line-height: 1.45;
+    margin: 0 0 12px;
+  }
+  .detail-line {
+    font-size: 13px;
+    color: var(--text-dim);
+    line-height: 1.55;
+    margin-top: 7px;
+  }
+  @media (max-width: 1060px) {
+    .real-results-layout { display: block; }
+    .detail-panel {
+      inset: 0;
+      width: auto;
+      top: 0;
+      z-index: 80;
+    }
+    .detail-drawer-body {
+      height: calc(100vh - 96px);
+    }
   }
 
   </style>
@@ -1317,9 +1497,10 @@
             desde este equipo y calcular su severidad técnica.</div>
         </div>
 
-        <div id="network-grid" class="network-grid" style="display:none;"></div>
-
-        <div id="detail-panel" class="detail-panel" style="display:none;"></div>
+        <div class="real-results-layout">
+          <div id="network-grid" class="network-grid" style="display:none;"></div>
+          <aside id="detail-panel" class="detail-panel" style="display:none;" aria-live="polite"></aside>
+        </div>
       </div>
     </section>
   </div><!-- /#view-real -->
@@ -1344,8 +1525,18 @@
       { max: 2.5, key: 'low',      label: 'BAJO',     color: '#6FE3A6' },
       { max: 5.0, key: 'medium',   label: 'MEDIO',    color: '#F2C45C' },
       { max: 7.5, key: 'high',     label: 'ALTO',     color: '#FF9156' },
-      { max: 10.01, key: 'critical', label: 'CRÍTICO', color: '#FF5640' },
+      { max: 10.01, key: 'critical', label: 'CRITICO', color: '#FF5640' },
     ];
+
+    const CLASSIFICATION_PRESENTATION = {
+      BAJO: { label: 'BAJO', simpleStatus: 'Configuración adecuada', color: '#6FE3A6' },
+      MEDIO: { label: 'MEDIO', simpleStatus: 'Puede mejorar', color: '#F2C45C' },
+      ALTO: { label: 'ALTO', simpleStatus: 'Requiere atención', color: '#FF9156' },
+      CRITICO: { label: 'CRITICO', simpleStatus: 'Protección insuficiente', color: '#FF5640' },
+      'CRÍTICO': { label: 'CRITICO', simpleStatus: 'Protección insuficiente', color: '#FF5640' },
+      NO_EVALUABLE: { label: 'NO_EVALUABLE', simpleStatus: 'No se pudo completar la evaluación', color: '#9BA7B4' },
+      SECURITY_PROFILE_MISMATCH: { label: 'Revisión técnica', simpleStatus: 'Requiere verificación técnica', color: '#F2C45C' },
+    };
 
     const PRESETS = {
       e1:  { au: '0.1', en: '0.1', rssi: -60, anomaly: false, ssidTag: 'WPA3 · CCMP' },
@@ -1371,6 +1562,20 @@
 
     function severityFor(score) {
       return SEVERITY.find(s => score <= s.max) || SEVERITY[SEVERITY.length - 1];
+    }
+
+    function presentationForClassification(classification) {
+      return CLASSIFICATION_PRESENTATION[classification] || CLASSIFICATION_PRESENTATION.NO_EVALUABLE;
+    }
+
+    function presentationForNetwork(net) {
+      if (!net || net.evaluation_status !== 'COMPLETE' || net.wss_score == null) {
+        return CLASSIFICATION_PRESENTATION.NO_EVALUABLE;
+      }
+      if (net.observation_status === 'SECURITY_PROFILE_MISMATCH') {
+        return CLASSIFICATION_PRESENTATION.SECURITY_PROFILE_MISMATCH;
+      }
+      return presentationForClassification(net.classification);
     }
 
     // ---------- State refs ----------
@@ -1562,12 +1767,45 @@
     const tabs = document.querySelectorAll('.app-tab');
     const views = document.querySelectorAll('.view');
 
+    function activateAppView(viewId) {
+      tabs.forEach(t => t.classList.toggle('active', t.dataset.view === viewId));
+      views.forEach(v => v.classList.toggle('active', v.id === viewId));
+    }
+
+    function scrollToDemoSection(sectionId) {
+      activateAppView('view-demo');
+      requestAnimationFrame(() => {
+        const target = document.getElementById(sectionId);
+        if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      });
+    }
+
+    function scrollToRealView() {
+      activateAppView('view-real');
+      requestAnimationFrame(() => {
+        const target = document.getElementById('view-real');
+        if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      });
+    }
+
     tabs.forEach(tab => {
-      tab.addEventListener('click', () => {
-        tabs.forEach(t => t.classList.remove('active'));
-        views.forEach(v => v.classList.remove('active'));
-        tab.classList.add('active');
-        document.getElementById(tab.dataset.view).classList.add('active');
+      tab.addEventListener('click', () => activateAppView(tab.dataset.view));
+    });
+
+    document.querySelectorAll('a[href^="#"]').forEach(link => {
+      link.addEventListener('click', event => {
+        const sectionId = link.getAttribute('href').slice(1);
+        if (['como-funciona', 'calculadora', 'clasificacion', 'beneficios'].includes(sectionId)) {
+          event.preventDefault();
+          scrollToDemoSection(sectionId);
+        }
+      });
+    });
+
+    document.querySelectorAll('.nav-cta').forEach(link => {
+      link.addEventListener('click', event => {
+        event.preventDefault();
+        scrollToRealView();
       });
     });
 
@@ -1591,6 +1829,7 @@
 
       let lastResults = [];
       let selectedIndex = null;
+      let activeDetailButton = null;
 
       function waitForPywebview(callback, attemptsLeft) {
         attemptsLeft = attemptsLeft === undefined ? 40 : attemptsLeft;
@@ -1637,9 +1876,65 @@
         return isComplete(net) ? Number(net.wss_score).toFixed(1) : fallback;
       }
 
+      function formatScoreLocal(net, fallback) {
+        return formatScore(net, fallback).replace('.', ',');
+      }
+
+      const RULE_NAMES = {
+        'REC-01': 'REC-01 — WPA3 con CCMP',
+        'REC-02': 'REC-02 — WPA2 con CCMP/AES',
+        'REC-03': 'REC-03 — WPA/TKIP',
+        'REC-04': 'REC-04 — WEP',
+        'REC-05': 'REC-05 — Red abierta o sin cifrado',
+        'REC-06': 'REC-06 — Parámetro no interpretado',
+        'REC-07': 'REC-07 — Configuraciones diferentes bajo el mismo SSID',
+      };
+
+      const SOURCE_TYPE_LABELS = {
+        LIVE_SCAN: 'Escaneo real',
+        FILE_IMPORT: 'Archivo TXT cargado',
+        DEMO: 'Datos de demostración',
+      };
+
+      const EVALUATION_STATUS_LABELS = {
+        COMPLETE: 'Evaluación completa',
+        INCOMPLETE: 'Evaluación incompleta',
+      };
+
+      const OBSERVATION_STATUS_LABELS = {
+        SINGLE_BSSID: 'Una radio observada',
+        MULTI_RADIO_OBSERVED: 'Varias radios observadas',
+        MULTI_AP_OBSERVED: 'Varios puntos de acceso observados',
+        SECURITY_PROFILE_MISMATCH: 'Configuraciones diferentes',
+        HIDDEN_SSID: 'SSID oculto observado individualmente',
+        BASELINE_MISMATCH: 'Diferencia con línea base autorizada',
+      };
+
+      function ruleDisplayName(ruleId) {
+        if (!ruleId) return 's/d';
+        return RULE_NAMES[ruleId] || ruleId;
+      }
+
+      function translateValue(value, dictionary) {
+        return dictionary[value] || value || 's/d';
+      }
+
+      function formatLocalDateTime(value) {
+        if (!value) return 's/d';
+        const date = new Date(value);
+        if (Number.isNaN(date.getTime())) return value;
+        const day = String(date.getDate()).padStart(2, '0');
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const year = date.getFullYear();
+        const hours = String(date.getHours()).padStart(2, '0');
+        const minutes = String(date.getMinutes()).padStart(2, '0');
+        return `${day}/${month}/${year} ${hours}:${minutes}`;
+      }
+
       function sourceText(metadata) {
         if (!metadata) return 'Origen no definido';
         if (metadata.source_type === 'LIVE_SCAN') return 'Escaneo real';
+        if (metadata.source_filename === 'es_unknown.txt') return metadata.source_label || 'Archivo de prueba con parámetros desconocidos';
         if (metadata.source_type === 'FILE_IMPORT') return 'Archivo cargado: ' + (metadata.source_filename || 'TXT');
         if (metadata.source_type === 'DEMO') return 'Datos de demostracion';
         return metadata.source_label || metadata.source_type || 'Origen no definido';
@@ -1654,10 +1949,11 @@
 
       function renderCard(net, index) {
         const complete = isComplete(net);
-        const sev = complete ? severityFor(net.wss_score) : { color: '#9BA7B4', label: 'No evaluable' };
+        const presentation = presentationForNetwork(net);
         const card = document.createElement('div');
         card.className = 'net-card';
         card.dataset.index = index;
+        card.style.borderLeft = `4px solid ${presentation.color}`;
 
         const observationText = observationLabel(net);
         const observationLine = observationText
@@ -1666,32 +1962,142 @@
         card.innerHTML = `
           <div class="net-card-top">
             <div class="net-card-ssid">${escapeHtml(net.ssid)}</div>
-            <div class="net-card-score" style="color:${sev.color};">${formatScore(net, 's/p')}</div>
+            <div class="net-card-score" style="color:${presentation.color}; font-size:13px;">${escapeHtml(presentation.simpleStatus)}</div>
+          </div>
+          <div class="net-card-badge" style="background:${presentation.color}20; color:${presentation.color}; border:1px solid ${presentation.color}55;">
+            ${escapeHtml(presentation.label)}
           </div>
           <div class="net-card-meta">
-            <span>${escapeHtml(net.auth_raw)}</span>
-            <span>·</span>
-            <span>${escapeHtml(net.cipher_raw)}</span>
-            <span>·</span>
-            <span>${net.signal_pct != null ? net.signal_pct + '%' : 's/d'}</span>
+            <span>${escapeHtml(net.simple_explanation || 'No hay explicación disponible.')}</span>
           </div>
           <div class="net-card-meta">
-            <span>${radioCountLabel(net)}</span>
-            <span>·</span>
-            <span>${escapeHtml((net.observed_bands || []).join(' y ') || net.band || 'banda s/d')}</span>
+            <span><b>Acción:</b> ${escapeHtml(net.recommended_action || 'Solicitar revisión técnica.')}</span>
           </div>
-          <span class="net-card-badge" style="background:${sev.color}20; color:${sev.color};">${complete ? net.classification : 'No se pudo completar la evaluación'}</span>
+          <div class="net-card-meta">
+            <span><b>Prioridad:</b> ${escapeHtml(net.priority || 'No definida')}</span>
+          </div>
+          <div class="net-card-meta">
+            <span><b>Limitación:</b> ${escapeHtml(net.limitations || 'Esta evaluación no comprobó todos los controles de seguridad.')}</span>
+          </div>
           ${observationLine}
+          <button type="button" class="net-card-badge technical-toggle" aria-expanded="false" aria-controls="detail-panel">
+            Ver detalles técnicos
+          </button>
         `;
 
-        card.addEventListener('click', () => {
+        const toggle = card.querySelector('.technical-toggle');
+        toggle.addEventListener('click', () => {
           document.querySelectorAll('.net-card').forEach(c => c.classList.remove('selected'));
           card.classList.add('selected');
           selectedIndex = index;
-          renderDetail(net);
+          openDetailPanel(net, toggle);
         });
 
         return card;
+      }
+
+      function resetDetailButtons() {
+        document.querySelectorAll('.technical-toggle').forEach(button => {
+          button.setAttribute('aria-expanded', 'false');
+          button.textContent = 'Ver detalles técnicos';
+        });
+      }
+
+      function openDetailPanel(net, button) {
+        resetDetailButtons();
+        activeDetailButton = button;
+        button.setAttribute('aria-expanded', 'true');
+        button.textContent = 'Detalles técnicos abiertos';
+        const complete = isComplete(net);
+        const presentation = presentationForNetwork(net);
+        detailPanel.innerHTML = `
+          <div class="detail-drawer-header">
+            <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:16px;">
+              <div>
+                <div class="detail-drawer-title">${escapeHtml(net.ssid)}</div>
+                <div class="detail-score-main" style="color:${presentation.color};">${escapeHtml(formatScoreLocal(net, 'Sin puntaje'))}</div>
+                <div class="detail-classification" style="color:${presentation.color};">${escapeHtml(complete ? 'Clasificación técnica: ' + presentation.label : 'Evaluación incompleta')}</div>
+                <div class="detail-simple-status" style="color:${presentation.color};">${escapeHtml(presentation.simpleStatus)}</div>
+              </div>
+              <button type="button" class="detail-close" id="detail-close-btn">Cerrar</button>
+            </div>
+          </div>
+          <div class="detail-drawer-body" id="detail-drawer-body">
+            ${renderDetail(net)}
+          </div>
+        `;
+        detailPanel.style.display = 'block';
+        document.getElementById('detail-close-btn').addEventListener('click', closeDetailPanel);
+        setupDetailTabs();
+        activateDetailTab('summary');
+        const panelBody = document.getElementById('detail-drawer-body');
+        panelBody.scrollTop = 0;
+      }
+
+      function setupDetailTabs() {
+        const tabs = Array.from(detailPanel.querySelectorAll('.detail-tab'));
+        tabs.forEach((tab, index) => {
+          tab.addEventListener('click', () => activateDetailTab(tab.dataset.tab));
+          tab.addEventListener('keydown', event => {
+            if (!['ArrowRight', 'ArrowLeft', 'Home', 'End'].includes(event.key)) return;
+            event.preventDefault();
+            let nextIndex = index;
+            if (event.key === 'ArrowRight') nextIndex = (index + 1) % tabs.length;
+            if (event.key === 'ArrowLeft') nextIndex = (index - 1 + tabs.length) % tabs.length;
+            if (event.key === 'Home') nextIndex = 0;
+            if (event.key === 'End') nextIndex = tabs.length - 1;
+            tabs[nextIndex].focus();
+            activateDetailTab(tabs[nextIndex].dataset.tab);
+          });
+        });
+      }
+
+      function activateDetailTab(tabName) {
+        detailPanel.querySelectorAll('.detail-tab').forEach(tab => {
+          const isActive = tab.dataset.tab === tabName;
+          tab.setAttribute('aria-selected', String(isActive));
+          tab.tabIndex = isActive ? 0 : -1;
+        });
+        detailPanel.querySelectorAll('.detail-tab-panel').forEach(panel => {
+          panel.hidden = panel.dataset.panel !== tabName;
+        });
+      }
+
+      function closeDetailPanel() {
+        detailPanel.style.display = 'none';
+        detailPanel.innerHTML = '';
+        resetDetailButtons();
+        const buttonToFocus = activeDetailButton;
+        activeDetailButton = null;
+        document.querySelectorAll('.net-card').forEach(c => c.classList.remove('selected'));
+        selectedIndex = null;
+        if (buttonToFocus) buttonToFocus.focus();
+      }
+
+      function detailTabs() {
+        return `
+          <div class="detail-tabs" role="tablist" aria-label="Secciones técnicas">
+            <button type="button" class="detail-tab" role="tab" data-tab="summary" id="tab-summary" aria-controls="panel-summary" aria-selected="true">Resumen</button>
+            <button type="button" class="detail-tab" role="tab" data-tab="parameters" id="tab-parameters" aria-controls="panel-parameters" aria-selected="false" tabindex="-1">Parámetros</button>
+            <button type="button" class="detail-tab" role="tab" data-tab="radios" id="tab-radios" aria-controls="panel-radios" aria-selected="false" tabindex="-1">Radios</button>
+            <button type="button" class="detail-tab" role="tab" data-tab="traceability" id="tab-traceability" aria-controls="panel-traceability" aria-selected="false" tabindex="-1">Trazabilidad avanzada</button>
+          </div>
+        `;
+      }
+
+      function detailKeyValues(rows) {
+        return `
+          <dl class="detail-kv">
+            ${rows.map(row => `<dt>${escapeHtml(row[0])}</dt><dd>${escapeHtml(row[1] == null || row[1] === '' ? 's/d' : row[1])}</dd>`).join('')}
+          </dl>
+        `;
+      }
+
+      function resetDetailButtons() {
+        document.querySelectorAll('.technical-toggle').forEach(button => {
+          button.setAttribute('aria-expanded', 'false');
+          button.textContent = 'Ver detalles técnicos';
+        });
       }
 
       function escapeHtml(str) {
@@ -1701,8 +2107,9 @@
       }
 
       function observationLabel(net) {
-        if (net.observation_status === 'MULTI_RADIO_OBSERVED') return 'Se observaron varias radios compatibles con una red de doble banda o infraestructura con múltiples puntos de acceso.';
-        if (net.observation_status === 'MULTI_AP_OBSERVED') return 'Varios puntos de acceso observados';
+        if (net.infrastructure_note) return net.infrastructure_note;
+        if (net.observation_status === 'MULTI_RADIO_OBSERVED') return 'Se observaron varias radios compatibles con una red de doble banda.';
+        if (net.observation_status === 'MULTI_AP_OBSERVED') return 'Se observaron varios puntos de acceso con el mismo nombre. Esto puede ser normal en redes mesh, repetidores o instalaciones con varios equipos.';
         if (net.observation_status === 'SECURITY_PROFILE_MISMATCH') return 'Configuraciones diferentes: requiere verificación técnica';
         if (net.observation_status === 'HIDDEN_SSID') return 'SSID oculto observado individualmente';
         return '';
@@ -1743,56 +2150,88 @@
 
       function renderDetail(net) {
         const complete = isComplete(net);
-        const sev = complete ? severityFor(net.wss_score) : { color: '#9BA7B4', label: 'No evaluable' };
+        const presentation = presentationForNetwork(net);
         const unknownFields = (net.unknown_fields || []).join(', ') || 'No informado';
-        detailPanel.style.display = 'block';
-        detailPanel.innerHTML = `
-          <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:24px; flex-wrap:wrap;">
-            <div>
-              <div style="font-family:var(--font-mono); font-size:13px; color:var(--text-faint); margin-bottom:6px;">
-                ${escapeHtml(net.bssid)}
-              </div>
-              <div style="font-family:var(--font-display); font-size:22px; font-weight:600;">
-                ${escapeHtml(net.ssid)}
-              </div>
-            </div>
-            <div style="text-align:right;">
-              <div style="font-family:var(--font-display); font-size:36px; font-weight:700; color:${sev.color};">
-                ${formatScore(net, 'Sin score')}
-              </div>
-              <div class="net-card-badge" style="background:${sev.color}20; color:${sev.color};">${complete ? net.classification : 'NO_EVALUABLE'}</div>
-            </div>
-          </div>
+        return `
+          ${detailTabs()}
+          <section class="detail-tab-panel" role="tabpanel" id="panel-summary" aria-labelledby="tab-summary" data-panel="summary">
+            <h3 class="detail-section-title">Resumen técnico</h3>
+            ${detailKeyValues([
+              ['Estado sencillo', presentation.simpleStatus],
+              ['Score técnico', formatScoreLocal(net, 'Sin puntaje')],
+              ['Clasificación técnica', complete ? presentation.label : 'Evaluación incompleta'],
+              ['Hallazgo', net.finding_title || 'Hallazgo no definido'],
+              ['Explicación', net.simple_explanation || 'No hay explicación disponible.'],
+              ['Recomendación', net.recommended_action || 'Solicitar revisión técnica.'],
+              ['Prioridad', net.priority || 'No definida'],
+              ['Limitaciones de la evaluación', net.limitations || 'Esta evaluación no comprobó todos los controles de seguridad.'],
+              ['Observación de infraestructura', observationLabel(net) || 'Sin observación adicional.'],
+              ['Regla aplicada', ruleDisplayName(net.recommendation_rule_id)],
+              ['Parámetros no interpretados', complete ? 'No aplica' : unknownFields],
+            ])}
+          </section>
 
-          <div class="vector-box" style="margin-top:24px;">
-            <div class="vb-label">${complete ? 'Vector WSS' : 'Evaluación incompleta'}</div>
-            <div class="vb-value">${complete ? escapeHtml(net.wss_vector) : 'No se pudo completar la evaluación'}</div>
-            ${complete ? '' : `<div style="font-size:12px; color:var(--text-dim); margin-top:8px;">Campo no interpretado: ${escapeHtml(unknownFields)}. Repetir la evaluación o solicitar revisión técnica. No se asigna score de forma deliberada.</div>`}
-          </div>
+          <section class="detail-tab-panel" role="tabpanel" id="panel-parameters" aria-labelledby="tab-parameters" data-panel="parameters" hidden>
+            <h3 class="detail-section-title">Parámetros observados</h3>
+            ${detailKeyValues([
+              ['Autenticación original', net.auth_raw],
+              ['Autenticación normalizada', net.auth_key],
+              ['Cifrado original', net.cipher_raw],
+              ['Cifrado normalizado', net.cipher_key],
+              ['Señal', net.signal_pct ? net.signal_pct + '%' : 's/d'],
+              ['Canal', net.channel],
+              ['Banda', net.band],
+              ['Tipo de radio', net.radio_type],
+              ['MFP', net.mfp_required],
+              ['Score WSS', formatScore(net, 'Sin score')],
+              ['Clasificación técnica', complete ? presentation.label : 'NO_EVALUABLE'],
+              ['Vector WSS', complete ? net.wss_vector : 'No se pudo completar la evaluación'],
+              ['AU', net.au],
+              ['EN', net.en],
+              ['EX', net.ex],
+              ['AN', net.an],
+              ['BM', net.bm_label || net.bm],
+            ])}
+          </section>
 
-          <div class="breakdown" style="${complete ? '' : 'display:none;'}">
-            ${detailBar('AU · Autenticación', net.au, net.auth_raw)}
-            ${detailBar('EN · Cifrado', net.en, net.cipher_raw)}
-            ${detailBar('EX · Exposición', net.ex, (net.rssi_dbm != null ? net.rssi_dbm + ' dBm' : 'señal ' + net.signal_pct + '%'))}
-            ${detailBar('AN · Indicador de condición anómala', net.an, anDetailMessage(net))}
-            ${detailBar('BM · Benchmark', net.bm, net.bm_label)}
-          </div>
-          ${technicalList(net)}
+          <section class="detail-tab-panel" role="tabpanel" id="panel-radios" aria-labelledby="tab-radios" data-panel="radios" hidden>
+            <h3 class="detail-section-title">Radios o puntos de acceso</h3>
+            ${technicalList(net)}
+          </section>
+
+          <section class="detail-tab-panel" role="tabpanel" id="panel-traceability" aria-labelledby="tab-traceability" data-panel="traceability" hidden>
+            <h3 class="detail-section-title">Trazabilidad avanzada</h3>
+            ${detailKeyValues([
+              ['Regla aplicada', ruleDisplayName(net.recommendation_rule_id)],
+              ['Versión de la regla', net.recommendation_rule_version],
+              ['Tipo de origen', translateValue(net.source_type, SOURCE_TYPE_LABELS)],
+              ['Descripción del origen', net.source_label],
+              ['Archivo procesado', net.source_filename],
+              ['Versión del motor', net.engine_version],
+              ['Estado de la evaluación', translateValue(net.evaluation_status, EVALUATION_STATUS_LABELS)],
+              ['Estado de la infraestructura observada', translateValue(net.observation_status, OBSERVATION_STATUS_LABELS)],
+              ['Fecha de procesamiento', formatLocalDateTime(net.processed_at)],
+            ])}
+          </section>
         `;
       }
 
       function technicalList(net) {
         const items = net.group_items || [net];
-        if (items.length <= 1) return '';
         return `
-          <div class="vector-box" style="margin-top:18px;">
-            <div class="vb-label">Detalle tecnico por BSSID</div>
-            ${items.map(item => `
-              <div style="font-size:12px; color:var(--text-dim); margin-top:8px;">
-                <b>${escapeHtml(item.bssid)}</b> · ${escapeHtml(item.band || 'banda s/d')} · canal ${escapeHtml(item.channel || 's/d')} · señal ${escapeHtml(item.signal_pct || 's/d')}% · ${escapeHtml(item.radio_type || 'radio s/d')} · ${escapeHtml(item.auth_raw)} · ${escapeHtml(item.cipher_raw)}
-              </div>
-            `).join('')}
-          </div>
+          ${items.map(item => `
+            <div class="radio-card">
+              ${detailKeyValues([
+                ['BSSID', item.bssid],
+                ['Señal', item.signal_pct ? item.signal_pct + '%' : 's/d'],
+                ['Banda', item.band],
+                ['Canal', item.channel],
+                ['Tipo de radio', item.radio_type],
+                ['Autenticación', `${item.auth_raw || 's/d'} (${item.auth_key || 's/d'})`],
+                ['Cifrado', `${item.cipher_raw || 's/d'} (${item.cipher_key || 's/d'})`],
+              ])}
+            </div>
+          `).join('')}
         `;
       }
 
@@ -1821,7 +2260,7 @@
         if (!results.length) {
           scanEmpty.style.display = 'block';
           networkGrid.style.display = 'none';
-          detailPanel.style.display = 'none';
+          closeDetailPanel();
           btnExport.style.display = 'none';
           anonLabel.style.display = 'none';
           return;
@@ -1835,11 +2274,14 @@
         const displayItems = buildDisplayGroups(results);
         displayItems.forEach((net, i) => networkGrid.appendChild(renderCard(net, i)));
 
-        // Seleccionar automaticamente la red mas severa (ya viene ordenada por score desc.)
-        networkGrid.firstChild.classList.add('selected');
-        renderDetail(displayItems[0]);
-        selectedIndex = 0;
+        closeDetailPanel();
       }
+
+      document.addEventListener('keydown', event => {
+        if (event.key === 'Escape' && detailPanel.style.display !== 'none') {
+          closeDetailPanel();
+        }
+      });
 
       function setLoading(isLoading) {
         btnScan.classList.toggle('loading', isLoading);
