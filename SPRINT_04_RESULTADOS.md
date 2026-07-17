@@ -521,3 +521,96 @@ El escenario incluye:
 Advertencia observada:
 
 - `pytest` informo que no pudo escribir cache en `.pytest_cache` por permisos de la copia temporal. No afecta el resultado de las pruebas.
+
+## Ajuste posterior a la validacion visual de conteos y layout
+
+### Problema detectado
+
+Durante la revision visual de:
+
+- `WSS_Reporte_2026-07-16_sprint4_hidden.pdf`
+- `WSS_Reporte_2026-07-16_sprint4_hidden_anon.pdf`
+
+se detectaron inconsistencias en el resumen ejecutivo y una superposicion visual entre `Sin puntaje` y el badge `No evaluable`.
+
+### Correcciones aplicadas
+
+- El resumen ejecutivo ahora se calcula desde la misma estructura agrupada que genera las secciones del PDF.
+- Se reemplazo `Registros evaluados` por `Resultados de red generados`.
+- Se agrego el conteo visible de `BSSID o radios observados`.
+- La distribucion por clasificacion ahora incluye resultados `No evaluable`.
+- La suma de clasificaciones se verifica contra los resultados logicos generados.
+- El score y la clasificacion se imprimen en columnas independientes para evitar superposicion con:
+  - `2,35`;
+  - `7,0`;
+  - `10,0`;
+  - `Sin puntaje`.
+- En presentacion visible se traducen valores tecnicos:
+  - `OPEN` como `Abierta (OPEN)`;
+  - `UNKNOWN` como `No interpretada (UNKNOWN)`;
+  - `NONE` como `Ninguna (NONE)`.
+- Los textos visibles del escenario sintetico se corrigieron a:
+  - `Validacion sintetica` -> `Validación sintética`;
+  - `Escenario sintetico` -> `Escenario sintético`.
+
+### Coherencia de escenarios sinteticos
+
+Las pruebas y los PDFs sinteticos se generan desde texto tipo `netsh` procesado por el motor de evaluacion, evitando reutilizar manualmente componentes AU/EN/EX de WPA2 para escenarios WEP, OPEN o UNKNOWN.
+
+No se modificaron:
+
+- formula WSS;
+- pesos;
+- umbrales;
+- tablas AU, EN o EX;
+- `wss_engine.py`.
+
+### Pruebas agregadas
+
+- Dual-band: dos BSSID producen un resultado logico y dos radios observadas.
+- Cuatro redes identificables mas nueve ocultas producen trece resultados logicos.
+- Evaluaciones completas e incompletas se calculan desde resultados agrupados.
+- La distribucion incluye `No evaluable`.
+- La suma de clasificaciones coincide con los resultados logicos.
+- `NO_EVALUABLE` no depende del posicionamiento fijo usado para scores numericos.
+- Los escenarios sinteticos tienen componentes coherentes con autenticacion, cifrado, score, clasificacion y estado de evaluacion.
+- `OPEN`, `UNKNOWN` y `NONE` aparecen traducidos en la presentacion visible.
+- La anonimizacion conserva los conteos.
+
+### Validacion manual pendiente
+
+Queda pendiente revisar nuevamente los PDFs normal y anonimizado generados despues de estas correcciones antes de cerrar el Sprint 4.
+
+## Correccion final de valores ausentes visibles
+
+### Problema detectado
+
+En resultados `NO_EVALUABLE`, algunos componentes internos ausentes podian aparecer en el PDF como valores Python, por ejemplo:
+
+- `AU / EN / EX / AN / BM: None / None / 0.8 / 0.0 / s/d`
+
+### Correccion aplicada
+
+- Se agrego una funcion comun de presentacion para valores ausentes.
+- Los valores Python `None` se muestran como `s/d` en el PDF.
+- No se alteran los datos internos ni el JSON tecnico.
+- La linea esperada queda:
+  - `AU / EN / EX / AN / BM: s/d / s/d / 0.8 / 0.0 / s/d`
+
+### Prueba agregada
+
+Se agrego una prueba para confirmar que un resultado `NO_EVALUABLE`:
+
+- conserva AU y EN ausentes internamente;
+- muestra `s/d` en el PDF;
+- no muestra `None`, `null` ni `undefined` en el texto visible del PDF.
+
+### Alcance
+
+No se modificaron:
+
+- `wss_engine.py`;
+- formula WSS;
+- pesos;
+- umbrales;
+- tablas AU, EN o EX.

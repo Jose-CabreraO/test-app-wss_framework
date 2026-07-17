@@ -256,24 +256,31 @@ def summarize_results(results, source_type=None):
 
 
 def summarize_pdf_results(raw_results, logical_results, source_type=None):
-    raw_summary = summarize_results(raw_results, source_type=source_type)
+    summary = summarize_results(logical_results, source_type=source_type)
     visible_networks = {
         item.get("ssid")
         for item in logical_results
         if not item.get("hidden_ssid") and item.get("ssid")
     }
-    hidden_observations = sum(1 for item in raw_results if item.get("hidden_ssid"))
+    hidden_observations = sum(1 for item in logical_results if item.get("hidden_ssid"))
+    observed_radios = sum(item.get("logical_bssid_count") or 1 for item in logical_results)
     attention = sum(
         1 for item in logical_results
         if item.get("classification") in {"ALTO", "CRITICO", "CRÍTICO"}
         or item.get("evaluation_status") != "COMPLETE"
     )
-    raw_summary.update({
+    by_classification = {}
+    for item in logical_results:
+        classification = item.get("classification") or "NO_EVALUABLE"
+        by_classification[classification] = by_classification.get(classification, 0) + 1
+    summary.update({
         "identifiable_networks": len(visible_networks),
         "hidden_observations": hidden_observations,
+        "observed_radios": observed_radios,
         "attention_required": attention,
+        "by_classification": by_classification,
     })
-    return raw_summary
+    return summary
 
 
 def anonymize_results(results):
@@ -312,7 +319,9 @@ DISPLAY_LABELS = {
     "LOW": "Bajo",
     "MEDIUM": "Medio",
     "HIGH": "Alto",
-    "UNKNOWN": "Desconocido",
+    "UNKNOWN": "No interpretada",
+    "OPEN": "Abierta",
+    "NONE": "Ninguna",
     "NO_COST": "Sin costo",
     "SHORT_TERM": "Corto plazo",
     "IMMEDIATE": "Inmediato",
@@ -565,6 +574,12 @@ def _pdf_text(value):
     )
 
 
+def _display_value(value):
+    if value is None:
+        return "s/d"
+    return str(value)
+
+
 class WssPdf(FPDF):
     def footer(self):
         self.set_y(-14)
@@ -605,6 +620,20 @@ def _pdf_badge(pdf, label, color):
     pdf.set_text_color(20, 24, 30)
 
 
+def _pdf_score_classification_row(pdf, score_text, classification):
+    _ensure_pdf_space(pdf, 14)
+    score_width = 58
+    badge_width = 44
+    pdf.set_font("Helvetica", "B", 20)
+    pdf.cell(score_width, 10, _pdf_text(score_text), ln=0)
+    pdf.set_fill_color(*_classification_color(classification))
+    pdf.set_text_color(20, 24, 30)
+    pdf.set_font("Helvetica", "B", 9)
+    pdf.cell(badge_width, 7, _pdf_text(display_label(classification)), ln=1, align="C", fill=True)
+    pdf.set_text_color(20, 24, 30)
+    pdf.ln(2)
+
+
 def _classification_color(classification):
     colors = {
         "BAJO": (111, 227, 166),
@@ -624,6 +653,24 @@ def _visible_action_meta(action):
         f"Costo: {display_label(action.get('cost_level'))}; "
         f"Plazo: {display_label(action.get('time_horizon'))}"
     )
+
+
+def _technical_value(raw_value, key_value):
+    if key_value == "UNKNOWN":
+        return "No interpretada (UNKNOWN)"
+    raw_label = display_label(raw_value)
+    key_label = display_label(key_value)
+    if key_value and raw_value != key_value:
+        return f"{raw_label} ({key_value})"
+    if key_value and key_label != key_value:
+        return f"{key_label} ({key_value})"
+    return raw_label
+
+
+def _wss_component_value(value):
+    if value is None:
+        return "s/d"
+    return value
 
 
 def build_pdf_report(results, metadata, anonymize=False, user_profile=DEFAULT_USER_PROFILE,
@@ -683,12 +730,13 @@ def build_pdf_report(results, metadata, anonymize=False, user_profile=DEFAULT_US
     pdf.set_font("Helvetica", "", 9)
     pdf.multi_cell(0, 5, _pdf_text(SCOPE_TEXT))
     summary_lines = [
-        f"Registros evaluados: {pdf_summary['total_results']}",
+        f"Resultados de red generados: {pdf_summary['total_results']}",
         f"Redes con SSID identificable: {pdf_summary['identifiable_networks']}",
         f"Observaciones de SSID oculto: {pdf_summary['hidden_observations']}",
         f"Evaluaciones completas: {pdf_summary['complete_evaluations']}",
         f"Evaluaciones incompletas: {pdf_summary['incomplete_evaluations']}",
-        f"Redes o registros que requieren atención: {pdf_summary['attention_required']}",
+        f"BSSID o radios observados: {pdf_summary['observed_radios']}",
+        f"Resultados que requieren atención: {pdf_summary['attention_required']}",
         "Distribución: " + ", ".join(
             f"{display_label(key)}: {value}" for key, value in sorted(pdf_summary["by_classification"].items())
         ),
@@ -707,10 +755,7 @@ def build_pdf_report(results, metadata, anonymize=False, user_profile=DEFAULT_US
         visible_text.append(f"Resultado por red {index}: {item.get('ssid')}")
         classification = item.get("classification") or "NO_EVALUABLE"
         score_text = "Sin puntaje" if item.get("wss_score") is None else str(item.get("wss_score")).replace(".", ",")
-        pdf.set_font("Helvetica", "B", 20)
-        pdf.cell(30, 10, _pdf_text(score_text), ln=0)
-        _pdf_badge(pdf, display_label(classification), _classification_color(classification))
-        pdf.ln(12)
+        _pdf_score_classification_row(pdf, score_text, classification)
         _add_pdf_line(pdf, "Estado sencillo", item.get("simple_status"))
         _add_pdf_line(pdf, "Clasificación", display_label(classification))
         _add_pdf_line(pdf, "Hallazgo", item.get("finding_title"))
@@ -737,12 +782,13 @@ def build_pdf_report(results, metadata, anonymize=False, user_profile=DEFAULT_US
         _pdf_section(pdf, "Detalles técnicos", visible_text)
         vector = split_wss_vector(item.get("wss_vector"))
         technical_rows = [
-            ("Autenticación", f"{item.get('auth_raw')} ({item.get('auth_key')})"),
-            ("Cifrado", f"{item.get('cipher_raw')} ({item.get('cipher_key')})"),
+            ("Autenticación", _technical_value(item.get("auth_raw"), item.get("auth_key"))),
+            ("Cifrado", _technical_value(item.get("cipher_raw"), item.get("cipher_key"))),
             ("Versión del esquema WSS", vector.get("schema_version")),
             ("AU / EN / EX / AN / BM", (
-                f"{item.get('au')} / {item.get('en')} / {item.get('ex')} / "
-                f"{item.get('an')} / {display_label(item.get('bm_label') or item.get('bm'))}"
+                f"{_display_value(item.get('au'))} / {_display_value(item.get('en'))} / "
+                f"{_display_value(item.get('ex'))} / {_display_value(item.get('an'))} / "
+                f"{display_label(_wss_component_value(item.get('bm_label') or item.get('bm')))}"
             )),
         ]
         for label, value in technical_rows:
@@ -754,9 +800,14 @@ def build_pdf_report(results, metadata, anonymize=False, user_profile=DEFAULT_US
         pdf.set_font("Helvetica", "", 8)
         for radio in item.get("logical_radios", []):
             row = (
-                f"BSSID: {radio.get('bssid')} | Señal: {radio.get('signal_pct') or 's/d'} | "
-                f"Banda: {radio.get('band') or 's/d'} | Canal: {radio.get('channel') or 's/d'} | "
-                f"Radio: {radio.get('radio_type') or 's/d'} | MFP: {radio.get('mfp_required') or 's/d'}"
+                f"BSSID: {_display_value(radio.get('bssid'))} | "
+                f"Señal: {_display_value(radio.get('signal_pct'))} | "
+                f"Banda: {_display_value(radio.get('band'))} | "
+                f"Canal: {_display_value(radio.get('channel'))} | "
+                f"Radio: {_display_value(radio.get('radio_type'))} | "
+                f"Autenticación: {_technical_value(radio.get('auth_raw'), radio.get('auth_key'))} | "
+                f"Cifrado: {_technical_value(radio.get('cipher_raw'), radio.get('cipher_key'))} | "
+                f"MFP: {_display_value(radio.get('mfp_required'))}"
             )
             pdf.multi_cell(0, 5, _pdf_text(row))
             visible_text.append(row)
@@ -775,7 +826,7 @@ def build_pdf_report(results, metadata, anonymize=False, user_profile=DEFAULT_US
         ]
         for label, value in trace_rows:
             _add_pdf_line(pdf, label, value)
-            visible_text.append(f"{label}: {value}")
+            visible_text.append(f"{label}: {_display_value(value)}")
         practices.extend(item.get("complementary_practices", []))
 
     if practices:

@@ -1,4 +1,5 @@
 import json
+import inspect
 from pathlib import Path
 
 import app
@@ -58,6 +59,78 @@ def _actions_for(auth, cipher, target_user, classification="BAJO", evaluation_st
         target_user=target_user,
     )
     return rec["rule_id"], rec["prioritized_actions"]
+
+
+def _sprint4_pdf_scenario():
+    hidden_blocks = []
+    for index in range(1, 10):
+        hidden_blocks.append(f"""
+SSID {index + 5} :
+    Tipo de red             : Infraestructura
+    Autenticación           : WPA2-Personal
+    Cifrado                 : CCMP
+    BSSID 1                 : 00:11:22:33:55:{index:02d}
+         Señal              : 80%
+         Tipo de radio      : 802.11n
+         Banda              : 2,4 GHz
+         Canal              : {index}
+""")
+    raw = """
+Nombre de interfaz : Wi-Fi
+Actualmente hay 14 redes visibles.
+
+SSID 1 : ASOC CAPELLANIA
+    Tipo de red             : Infraestructura
+    Autenticación           : WPA2-Personal
+    Cifrado                 : CCMP
+    BSSID 1                 : 00:11:22:33:44:01
+         Señal              : 80%
+         Tipo de radio      : 802.11n
+         Banda              : 2,4 GHz
+         Canal              : 6
+    BSSID 2                 : 00:11:22:33:44:02
+         Señal              : 82%
+         Tipo de radio      : 802.11ac
+         Banda              : 5 GHz
+         Canal              : 36
+
+SSID 2 : LAB-WEP
+    Tipo de red             : Infraestructura
+    Autenticación           : WPA-Personal
+    Cifrado                 : WEP
+    BSSID 1                 : 00:11:22:33:44:03
+         Señal              : 80%
+         Tipo de radio      : 802.11n
+         Banda              : 2,4 GHz
+         Canal              : 7
+
+SSID 3 : LAB-OPEN
+    Tipo de red             : Infraestructura
+    Autenticación           : Abierta
+    Cifrado                 : Ninguna
+    BSSID 1                 : 00:11:22:33:44:04
+         Señal              : 80%
+         Tipo de radio      : 802.11n
+         Banda              : 2,4 GHz
+         Canal              : 8
+
+SSID 4 : LAB-UNKNOWN
+    Tipo de red             : Infraestructura
+    Autenticacion           : Metodo-No-Reconocido
+    Cifrado                 : Cifrado-No-Reconocido
+    BSSID 1                 : 00:11:22:33:44:05
+         Senal              : 80%
+         Tipo de radio      : 802.11n
+         Banda              : 2,4 GHz
+         Canal              : 9
+""" + "\n".join(hidden_blocks)
+    return app.process_raw_output(
+        raw,
+        app.SOURCE_DEMO,
+        "Escenario sintético Sprint 4",
+        synthetic_data=True,
+        target_user="NETWORK_OWNER",
+    )
 
 
 def test_owner_prioritization_for_open_network():
@@ -271,11 +344,115 @@ def test_pdf_summary_separates_records_visible_networks_and_hidden_observations(
     built = app.build_pdf_report(results, metadata, user_profile="NETWORK_OWNER")
     visible = built["visible_text"]
 
-    assert "Registros evaluados: 12" in visible
+    assert "Resultados de red generados: 11" in visible
     assert "Redes con SSID identificable: 2" in visible
     assert "Observaciones de SSID oculto: 9" in visible
+    assert "BSSID o radios observados: 12" in visible
     assert "Redes lógicas evaluadas" not in visible
     assert built["logical_network_count"] == 11
+
+
+def test_pdf_summary_matches_grouped_sprint4_synthetic_scenario():
+    response = _sprint4_pdf_scenario()
+    assert response["ok"] is True
+    built = app.build_pdf_report(
+        response["results"],
+        response["metadata"],
+        user_profile="NETWORK_OWNER",
+        organization="Validación sintética Sprint 4",
+    )
+    visible = built["visible_text"]
+
+    assert built["logical_network_count"] == 13
+    assert "Resultados de red generados: 13" in visible
+    assert "Redes con SSID identificable: 4" in visible
+    assert "Observaciones de SSID oculto: 9" in visible
+    assert "Evaluaciones completas: 12" in visible
+    assert "Evaluaciones incompletas: 1" in visible
+    assert "BSSID o radios observados: 14" in visible
+    assert "Bajo: 10" in visible
+    assert "Alto: 1" in visible
+    assert "Crítico: 1" in visible
+    assert "No evaluable: 1" in visible
+    distribution = next(line for line in visible.splitlines() if line.startswith("Distribución: "))
+    total = sum(int(part.rsplit(": ", 1)[1]) for part in distribution.replace("Distribución: ", "").split(", "))
+    assert total == built["logical_network_count"]
+
+
+def test_dual_band_counts_as_one_logical_result_and_two_radios():
+    response = _sprint4_pdf_scenario()
+    logical = app.group_logical_networks(response["results"])
+    dual = next(item for item in logical if item["ssid"] == "ASOC CAPELLANIA")
+
+    assert dual["logical_bssid_count"] == 2
+    assert len([item for item in logical if item["ssid"] == "ASOC CAPELLANIA"]) == 1
+
+
+def test_pdf_summary_counts_are_preserved_when_anonymized():
+    response = _sprint4_pdf_scenario()
+    normal = app.build_pdf_report(response["results"], response["metadata"], user_profile="NETWORK_OWNER")
+    anonymized = app.build_pdf_report(
+        response["results"],
+        response["metadata"],
+        anonymize=True,
+        user_profile="NETWORK_OWNER",
+    )
+
+    for expected in [
+        "Resultados de red generados: 13",
+        "Redes con SSID identificable: 4",
+        "Observaciones de SSID oculto: 9",
+        "BSSID o radios observados: 14",
+    ]:
+        assert expected in normal["visible_text"]
+        assert expected in anonymized["visible_text"]
+
+
+def test_pdf_score_and_classification_use_independent_columns():
+    build_source = inspect.getsource(app.build_pdf_report)
+    row_source = inspect.getsource(app._pdf_score_classification_row)
+
+    assert "_pdf_score_classification_row(pdf, score_text, classification)" in build_source
+    assert "score_width" in row_source
+    assert "badge_width" in row_source
+    assert "set_x" not in row_source
+
+
+def test_synthetic_scenarios_have_coherent_engine_components_and_translations():
+    response = _sprint4_pdf_scenario()
+    by_ssid = {item["ssid"]: item for item in response["results"]}
+
+    assert by_ssid["LAB-WEP"]["classification"] == "ALTO"
+    assert by_ssid["LAB-WEP"]["au"] > by_ssid["ASOC CAPELLANIA"]["au"]
+    assert by_ssid["LAB-OPEN"]["classification"] == "CRITICO"
+    assert by_ssid["LAB-OPEN"]["auth_key"] == "OPEN"
+    assert by_ssid["LAB-OPEN"]["cipher_key"] == "NONE"
+    assert by_ssid["LAB-UNKNOWN"]["classification"] == "NO_EVALUABLE"
+    assert by_ssid["LAB-UNKNOWN"]["wss_score"] is None
+
+    built = app.build_pdf_report(response["results"], response["metadata"])
+    visible = built["visible_text"]
+
+    assert "Abierta (OPEN)" in visible
+    assert "Ninguna (NONE)" in visible
+    assert "No interpretada (UNKNOWN)" in visible
+
+
+def test_no_evaluable_missing_components_are_presented_as_sd():
+    response = _sprint4_pdf_scenario()
+    unknown = next(item for item in response["results"] if item["ssid"] == "LAB-UNKNOWN")
+
+    assert unknown["classification"] == "NO_EVALUABLE"
+    assert unknown["au"] is None
+    assert unknown["en"] is None
+
+    built = app.build_pdf_report(response["results"], response["metadata"])
+    visible = built["visible_text"]
+
+    assert "AU / EN / EX / AN / BM: s/d / s/d / 0.8 / 0.0 / s/d" in visible
+    assert "None" not in visible
+    assert "null" not in visible
+    assert "undefined" not in visible
 
 
 def test_pdf_does_not_collapse_hidden_ssids_or_reveal_provisional_internal_value():
